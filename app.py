@@ -552,4 +552,4 @@ def afficher_analyse(df):
         )
 
 
-st.sidebar.title("🌍 
+st.sidebar.title("🌍 DataClean Djibouti")
