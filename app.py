@@ -94,7 +94,7 @@ def ajouter_anomalie(
     explication,
     correction
 ):
-    types_elevés = {
+    types_eleves = {
         "Identifiant dupliqué",
         "Date invalide",
         "Valeur impossible",
@@ -111,7 +111,7 @@ def ajouter_anomalie(
             "Correction proposée": correction,
             "Niveau": (
                 "Élevé"
-                if type_anomalie in types_elevés
+                if type_anomalie in types_eleves
                 else "Moyen"
             )
         }
@@ -196,7 +196,7 @@ def analyser_donnees(df):
                             "age",
                             "Valeur impossible",
                             str(age),
-                            "L'âge doit être compris entre 0 et 120 ans.",
+                            "L'âge doit être entre 0 et 120 ans.",
                             "Vérifier l'âge dans la source officielle."
                         )
 
@@ -224,7 +224,7 @@ def analyser_donnees(df):
                     "commune",
                     "Valeur non reconnue",
                     str(commune),
-                    "La commune ne correspond pas à la liste de référence.",
+                    "La commune n'est pas dans la liste de référence.",
                     "Choisir une commune valide."
                 )
 
@@ -425,6 +425,7 @@ def analyser_url(url):
 
 def afficher_analyse(df):
     rapport = analyser_donnees(df)
+
     total_anomalies = len(rapport)
     total_lignes = len(df)
 
@@ -457,13 +458,22 @@ def afficher_analyse(df):
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.metric("Lignes", df.shape[0])
+        st.metric(
+            "Lignes",
+            df.shape[0]
+        )
 
     with col2:
-        st.metric("Colonnes", df.shape[1])
+        st.metric(
+            "Colonnes",
+            df.shape[1]
+        )
 
     with col3:
-        st.metric("Anomalies", total_anomalies)
+        st.metric(
+            "Anomalies",
+            total_anomalies
+        )
 
     with col4:
         st.metric(
@@ -548,8 +558,223 @@ def afficher_analyse(df):
 
     else:
         st.info(
-            "Aucune colonne « statut » trouvée."
+            "Aucune colonne statut trouvée."
         )
 
 
 st.sidebar.title("🌍 DataClean Djibouti")
+st.sidebar.write("Prototype d'analyse de données")
+st.sidebar.markdown("---")
+st.sidebar.info(
+    "Utilisez uniquement des données publiques, "
+    "synthétiques ou anonymisées."
+)
+
+
+st.markdown(
+    """
+    <div class="hero">
+        <h1>🇩🇯 DataClean Djibouti</h1>
+        <p>
+            Analyse intelligente de la qualité des données publiques
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+
+st.markdown(
+    """
+    <div class="card">
+        <h2>📊 Analysez un fichier administratif</h2>
+        <p>
+            Importez un fichier CSV, Excel, JSON ou ODS.
+            DataClean détecte les valeurs manquantes,
+            doublons, formats incorrects et valeurs impossibles.
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+
+fichier = st.file_uploader(
+    "📂 Choisissez un fichier de données",
+    type=[
+        "csv",
+        "xlsx",
+        "json",
+        "ods"
+    ]
+)
+
+
+if fichier is None:
+    st.info(
+        "Aucun fichier importé. "
+        "Vous pouvez lancer la démonstration."
+    )
+
+    if st.button(
+        "🧪 Charger les données de démonstration"
+    ):
+        donnees_demo = pd.DataFrame(
+            {
+                "identifiant": [
+                    "DJ001",
+                    "DJ002",
+                    "DJ003",
+                    "DJ003",
+                    "DJ005",
+                    "DJ006",
+                    "DJ007"
+                ],
+                "nom": [
+                    "Ahmed Ali",
+                    "Fatou Hassan",
+                    "Mohamed Omar",
+                    "Mohamed Omar",
+                    "Sahra Ismail",
+                    None,
+                    "Ali Hassan"
+                ],
+                "commune": [
+                    "Djibouti",
+                    "Balbala",
+                    "Boulaos",
+                    "Boulaos",
+                    "Inconnu",
+                    "Balbala",
+                    "Djibouti"
+                ],
+                "age": [
+                    28,
+                    None,
+                    145,
+                    145,
+                    32,
+                    26,
+                    -4
+                ],
+                "date_inscription": [
+                    "2025-01-12",
+                    "2025-02-30",
+                    "2025-03-10",
+                    "2025-03-10",
+                    "2025-04-18",
+                    "2025-05-02",
+                    "2025-06-20"
+                ],
+                "telephone": [
+                    "77881234",
+                    "77881235",
+                    None,
+                    None,
+                    "123",
+                    "77881239",
+                    "77881240"
+                ],
+                "statut": [
+                    "Actif",
+                    "Actif",
+                    "Actif",
+                    "Actif",
+                    "Inactif",
+                    "Inactif",
+                    "Actif"
+                ]
+            }
+        )
+
+        st.session_state["donnees"] = donnees_demo
+
+else:
+    try:
+        st.session_state["donnees"] = lire_fichier(
+            fichier
+        )
+
+    except Exception as erreur:
+        st.error(
+            f"Impossible de lire le fichier : {erreur}"
+        )
+
+
+if "donnees" in st.session_state:
+    afficher_analyse(
+        st.session_state["donnees"]
+    )
+
+
+st.markdown("---")
+st.subheader("🌐 Tester une URL publique")
+
+st.caption(
+    "Cette fonction analyse uniquement le texte visible "
+    "d'une page web publique."
+)
+
+url = st.text_input(
+    "Entrez une adresse web",
+    placeholder="https://www.python.org"
+)
+
+
+if st.button("🔍 Analyser l'URL"):
+    if not url.strip():
+        st.warning(
+            "Veuillez saisir une URL."
+        )
+
+    else:
+        with st.spinner(
+            "Analyse de la page en cours..."
+        ):
+            resultat_url, erreur_url = analyser_url(
+                url
+            )
+
+        if erreur_url:
+            st.error(erreur_url)
+
+        else:
+            st.success(
+                "Analyse terminée."
+            )
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.metric(
+                    "Score de suspicion",
+                    f'{resultat_url["Score"]} %'
+                )
+
+            with col2:
+                st.metric(
+                    "Décision",
+                    resultat_url["Décision"]
+                )
+
+            st.write(
+                "**Explication :**",
+                resultat_url["Explication"]
+            )
+
+            indices = resultat_url["Indices"]
+
+            st.write(
+                "**Indices détectés :**",
+                ", ".join(indices)
+                if indices
+                else "Aucun"
+            )
+
+            st.write(
+                "**Contenu analysé :**",
+                (
+                    f'{resultat_url["Caractères analysés"]:,} '
+                    "caractères"
+                )
+            )
