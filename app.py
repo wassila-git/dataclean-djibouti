@@ -4,6 +4,7 @@ from datetime import datetime
 
 import pandas as pd
 import streamlit as st
+from sklearn.ensemble import IsolationForest
 
 
 st.set_page_config(
@@ -129,15 +130,9 @@ def ajouter_anomalie(
     type_anomalie,
     valeur,
     explication,
-    correction
+    correction,
+    niveau="Moyen"
 ):
-    types_eleves = {
-        "Identifiant dupliqué",
-        "Date invalide",
-        "Valeur impossible",
-        "Format incorrect"
-    }
-
     anomalies.append(
         {
             "Ligne": ligne,
@@ -146,11 +141,7 @@ def ajouter_anomalie(
             "Valeur": valeur,
             "Explication": explication,
             "Correction proposée": correction,
-            "Niveau": (
-                "Élevé"
-                if type_anomalie in types_eleves
-                else "Moyen"
-            )
+            "Niveau": niveau
         }
     )
 
@@ -161,7 +152,9 @@ def lire_fichier(fichier):
 
     if nom.endswith(".csv"):
         try:
-            return pd.read_csv(io.BytesIO(contenu))
+            return pd.read_csv(
+                io.BytesIO(contenu)
+            )
         except UnicodeDecodeError:
             return pd.read_csv(
                 io.BytesIO(contenu),
@@ -191,7 +184,110 @@ def lire_fichier(fichier):
     )
 
 
-def analyser_donnees(df):
+def creer_donnees_demo():
+    return pd.DataFrame(
+        {
+            "identifiant": [
+                "DJ001",
+                "DJ002",
+                "DJ003",
+                "DJ003",
+                "DJ005",
+                "DJ006",
+                "DJ007",
+                "DJ008",
+                "DJ009",
+                "DJ010"
+            ],
+            "nom": [
+                "Ahmed Ali",
+                "Fatou Hassan",
+                "Mohamed Omar",
+                "Mohamed Omar",
+                "Sahra Ismail",
+                None,
+                "Ali Hassan",
+                "Hawa Omar",
+                "Omar Said",
+                "Amina Yusuf"
+            ],
+            "commune": [
+                "Djibouti",
+                "Balbala",
+                "Boulaos",
+                "Boulaos",
+                "Inconnu",
+                "Balbala",
+                "Djibouti",
+                "Balbala",
+                "Boulaos",
+                "Djibouti"
+            ],
+            "age": [
+                28,
+                None,
+                145,
+                145,
+                32,
+                26,
+                -4,
+                31,
+                29,
+                200
+            ],
+            "revenu_mensuel": [
+                85000,
+                90000,
+                87000,
+                87000,
+                92000,
+                88000,
+                91000,
+                89500,
+                90500,
+                1500000
+            ],
+            "date_inscription": [
+                "2025-01-12",
+                "2025-02-30",
+                "2025-03-10",
+                "2025-03-10",
+                "2025-04-18",
+                "2025-05-02",
+                "2025-06-20",
+                "2025-07-01",
+                "2025-07-05",
+                "2025-07-10"
+            ],
+            "telephone": [
+                "77881234",
+                "77881235",
+                None,
+                None,
+                "123",
+                "77881239",
+                "77881240",
+                "77881241",
+                "77881242",
+                "77881243"
+            ],
+            "statut": [
+                "Actif",
+                "Actif",
+                "Actif",
+                "Actif",
+                "Inactif",
+                "Inactif",
+                "Actif",
+                "Actif",
+                "Actif",
+                "Actif"
+            ]
+        }
+    )
+
+
+def analyser_regles(df):
     anomalies = []
 
     communes_valides = {
@@ -216,7 +312,8 @@ def analyser_donnees(df):
                     "Valeur manquante",
                     "",
                     "Une information est absente.",
-                    "Compléter la valeur après vérification."
+                    "Compléter la valeur après vérification.",
+                    "Moyen"
                 )
 
         if "age" in df.columns:
@@ -234,7 +331,8 @@ def analyser_donnees(df):
                             "Valeur impossible",
                             str(age),
                             "L'âge doit être compris entre 0 et 120 ans.",
-                            "Vérifier l'âge dans la source officielle."
+                            "Vérifier l'âge dans la source officielle.",
+                            "Élevé"
                         )
 
                 except (ValueError, TypeError):
@@ -245,7 +343,8 @@ def analyser_donnees(df):
                         "Format incorrect",
                         str(age),
                         "L'âge doit être numérique.",
-                        "Convertir la valeur en nombre."
+                        "Convertir la valeur en nombre.",
+                        "Élevé"
                     )
 
         if "commune" in df.columns:
@@ -261,8 +360,9 @@ def analyser_donnees(df):
                     "commune",
                     "Valeur non reconnue",
                     str(commune),
-                    "La commune ne correspond pas à la liste de référence.",
-                    "Choisir une commune valide."
+                    "La commune n'est pas dans la liste de référence.",
+                    "Choisir une commune valide.",
+                    "Moyen"
                 )
 
         if "telephone" in df.columns:
@@ -285,7 +385,8 @@ def analyser_donnees(df):
                         "Format incorrect",
                         telephone,
                         "Le numéro doit contenir 8 chiffres.",
-                        "Vérifier le numéro de téléphone."
+                        "Vérifier le numéro de téléphone.",
+                        "Élevé"
                     )
 
         if "date_inscription" in df.columns:
@@ -305,7 +406,8 @@ def analyser_donnees(df):
                         "Date invalide",
                         str(date_valeur),
                         "La date n'est pas reconnue.",
-                        "Corriger au format AAAA-MM-JJ."
+                        "Corriger au format AAAA-MM-JJ.",
+                        "Élevé"
                     )
 
     if "identifiant" in df.columns:
@@ -322,79 +424,153 @@ def analyser_donnees(df):
                 "Identifiant dupliqué",
                 str(df.loc[index, "identifiant"]),
                 "Cet identifiant apparaît plusieurs fois.",
-                "Conserver une seule fiche après vérification."
+                "Conserver une seule fiche après vérification.",
+                "Élevé"
             )
 
     return pd.DataFrame(anomalies)
 
 
-def creer_donnees_demo():
-    return pd.DataFrame(
-        {
-            "identifiant": [
-                "DJ001",
-                "DJ002",
-                "DJ003",
-                "DJ003",
-                "DJ005",
-                "DJ006",
-                "DJ007"
+def analyser_isolation_forest(df):
+    resultat = df.copy()
+    anomalies = []
+
+    colonnes_numeriques = list(
+        resultat.select_dtypes(
+            include="number"
+        ).columns
+    )
+
+    if len(colonnes_numeriques) == 0:
+        return resultat, pd.DataFrame(anomalies), []
+
+    donnees_numeriques = resultat[
+        colonnes_numeriques
+    ].copy()
+
+    donnees_numeriques = donnees_numeriques.replace(
+        [float("inf"), float("-inf")],
+        pd.NA
+    )
+
+    donnees_numeriques = donnees_numeriques.apply(
+        pd.to_numeric,
+        errors="coerce"
+    )
+
+    donnees_numeriques = donnees_numeriques.fillna(
+        donnees_numeriques.median()
+    )
+
+    donnees_numeriques = donnees_numeriques.fillna(0)
+
+    if len(donnees_numeriques) < 5:
+        return resultat, pd.DataFrame(anomalies), colonnes_numeriques
+
+    contamination = min(
+        0.20,
+        max(
+            0.05,
+            1 / len(donnees_numeriques)
+        )
+    )
+
+    modele = IsolationForest(
+        n_estimators=200,
+        contamination=contamination,
+        random_state=42
+    )
+
+    predictions = modele.fit_predict(
+        donnees_numeriques
+    )
+
+    scores = modele.decision_function(
+        donnees_numeriques
+    )
+
+    resultat["Score IA"] = scores.round(4)
+    resultat["Anomalie IA"] = [
+        "Oui"
+        if prediction == -1
+        else "Non"
+        for prediction in predictions
+    ]
+
+    colonnes_fondamentales = [
+        colonne
+        for colonne in colonnes_numeriques
+        if colonne in resultat.columns
+    ]
+
+    for position, prediction in enumerate(predictions):
+        if prediction == -1:
+            index = resultat.index[position]
+            numero_ligne = index + 2
+
+            valeurs = []
+
+            for colonne in colonnes_fondamentales:
+                valeurs.append(
+                    f"{colonne}={resultat.loc[index, colonne]}"
+                )
+
+            ajouter_anomalie(
+                anomalies,
+                numero_ligne,
+                ", ".join(colonnes_fondamentales),
+                "Anomalie statistique IA",
+                "; ".join(valeurs),
+                (
+                    "IsolationForest considère cette ligne comme "
+                    "atypique par rapport aux autres lignes."
+                ),
+                (
+                    "Vérifier les valeurs avec la source officielle "
+                    "avant toute correction."
+                ),
+                "À vérifier"
+            )
+
+    return (
+        resultat,
+        pd.DataFrame(anomalies),
+        colonnes_numeriques
+    )
+
+
+def analyser_complet(df, activer_ia=True):
+    rapport_regles = analyser_regles(df)
+
+    if not activer_ia:
+        return df.copy(), rapport_regles, []
+
+    donnees_ia, rapport_ia, colonnes_numeriques = (
+        analyser_isolation_forest(df)
+    )
+
+    if rapport_regles.empty and rapport_ia.empty:
+        rapport_final = pd.DataFrame()
+
+    elif rapport_regles.empty:
+        rapport_final = rapport_ia
+
+    elif rapport_ia.empty:
+        rapport_final = rapport_regles
+
+    else:
+        rapport_final = pd.concat(
+            [
+                rapport_regles,
+                rapport_ia
             ],
-            "nom": [
-                "Ahmed Ali",
-                "Fatou Hassan",
-                "Mohamed Omar",
-                "Mohamed Omar",
-                "Sahra Ismail",
-                None,
-                "Ali Hassan"
-            ],
-            "commune": [
-                "Djibouti",
-                "Balbala",
-                "Boulaos",
-                "Boulaos",
-                "Inconnu",
-                "Balbala",
-                "Djibouti"
-            ],
-            "age": [
-                28,
-                None,
-                145,
-                145,
-                32,
-                26,
-                -4
-            ],
-            "date_inscription": [
-                "2025-01-12",
-                "2025-02-30",
-                "2025-03-10",
-                "2025-03-10",
-                "2025-04-18",
-                "2025-05-02",
-                "2025-06-20"
-            ],
-            "telephone": [
-                "77881234",
-                "77881235",
-                None,
-                None,
-                "123",
-                "77881239",
-                "77881240"
-            ],
-            "statut": [
-                "Actif",
-                "Actif",
-                "Actif",
-                "Actif",
-                "Inactif",
-                "Inactif",
-                "Actif"
-            ]
-        }
+            ignore_index=True
+        )
+
+    return (
+        donnees_ia,
+        rapport_final,
+        colonnes_numeriques
     )
 
 
@@ -465,7 +641,7 @@ def nettoyer_donnees(df):
                         "Ancienne valeur": ancienne_valeur,
                         "Nouvelle valeur": nouvelle_valeur,
                         "Raison": (
-                            "Harmonisation de la commune"
+                            "Harmonisation du nom de la commune"
                         )
                     }
                 )
@@ -476,8 +652,16 @@ def nettoyer_donnees(df):
         nettoye["telephone"] = (
             nettoye["telephone"]
             .astype("string")
-            .str.replace(r"\.0$", "", regex=True)
-            .str.replace(r"\s+", "", regex=True)
+            .str.replace(
+                r"\.0$",
+                "",
+                regex=True
+            )
+            .str.replace(
+                r"\s+",
+                "",
+                regex=True
+            )
         )
 
         changements = (
@@ -538,7 +722,17 @@ def nettoyer_donnees(df):
 
 
 def afficher_analyse(df):
-    rapport = analyser_donnees(df)
+    activer_ia = st.checkbox(
+        "🤖 Activer la détection intelligente IsolationForest",
+        value=True
+    )
+
+    donnees_analysees, rapport, colonnes_ia = (
+        analyser_complet(
+            df,
+            activer_ia=activer_ia
+        )
+    )
 
     total_anomalies = len(rapport)
     total_lignes = len(df)
@@ -568,7 +762,7 @@ def afficher_analyse(df):
     )
 
     st.dataframe(
-        df,
+        donnees_analysees,
         use_container_width=True
     )
 
@@ -598,9 +792,21 @@ def afficher_analyse(df):
             f"{score} %"
         )
 
+    if activer_ia:
+        if colonnes_ia:
+            st.info(
+                "Colonnes analysées par IA : "
+                + ", ".join(colonnes_ia)
+            )
+        else:
+            st.warning(
+                "Aucune colonne numérique disponible "
+                "pour l'analyse IA."
+            )
+
     if total_anomalies == 0:
         st.success(
-            "Aucune anomalie détectée dans ce fichier."
+            "Aucune anomalie détectée."
         )
 
     else:
@@ -614,6 +820,20 @@ def afficher_analyse(df):
             use_container_width=True
         )
 
+        resume = (
+            rapport["Type"]
+            .value_counts()
+            .rename_axis("Type d'anomalie")
+            .reset_index(name="Nombre")
+        )
+
+        st.subheader("📌 Résumé")
+
+        st.dataframe(
+            resume,
+            use_container_width=True
+        )
+
         csv_rapport = rapport.to_csv(
             index=False
         ).encode("utf-8-sig")
@@ -623,7 +843,7 @@ def afficher_analyse(df):
             data=csv_rapport,
             file_name="rapport_anomalies.csv",
             mime="text/csv",
-            key="download_rapport"
+            key="telecharger_rapport"
         )
 
     st.markdown(
@@ -640,13 +860,17 @@ def afficher_analyse(df):
         "✨ Générer une version nettoyée",
         key="bouton_nettoyage"
     ):
-        donnees_nettoyees, journal = nettoyer_donnees(df)
+        donnees_nettoyees, journal = nettoyer_donnees(
+            df
+        )
 
         st.session_state["donnees_nettoyees"] = (
             donnees_nettoyees
         )
 
-        st.session_state["journal_modifications"] = journal
+        st.session_state["journal_modifications"] = (
+            journal
+        )
 
     if "donnees_nettoyees" in st.session_state:
         donnees_nettoyees = st.session_state[
@@ -702,7 +926,7 @@ def afficher_analyse(df):
                 data=csv_journal,
                 file_name="journal_modifications.csv",
                 mime="text/csv",
-                key="download_journal"
+                key="telecharger_journal"
             )
 
         csv_nettoye = donnees_nettoyees.to_csv(
@@ -714,7 +938,7 @@ def afficher_analyse(df):
             data=csv_nettoye,
             file_name="donnees_nettoyees.csv",
             mime="text/csv",
-            key="download_nettoye"
+            key="telecharger_nettoye"
         )
 
     st.markdown(
@@ -767,13 +991,12 @@ def afficher_accueil():
         <div class="card">
             <h2>Des données fiables pour de meilleures décisions</h2>
             <p>
-                DataClean Djibouti aide les administrations, les institutions
-                et les acteurs publics à identifier les erreurs présentes
-                dans leurs jeux de données avant leur utilisation.
+                DataClean Djibouti aide les administrations et institutions
+                à identifier les erreurs présentes dans leurs fichiers.
             </p>
             <p>
-                La solution détecte les anomalies, explique les problèmes,
-                propose des corrections contrôlées et génère des rapports.
+                La solution combine des règles de contrôle et un modèle
+                IsolationForest pour détecter les lignes atypiques.
             </p>
         </div>
         """,
@@ -788,8 +1011,7 @@ def afficher_accueil():
             <div class="card">
                 <h3>🎯 Objectif</h3>
                 <p>
-                    Améliorer la qualité des données publiques utilisées
-                    pour l'analyse et la décision.
+                    Améliorer la qualité des données publiques.
                 </p>
             </div>
             """,
@@ -800,10 +1022,9 @@ def afficher_accueil():
         st.markdown(
             """
             <div class="card">
-                <h3>🤖 Innovation</h3>
+                <h3>🤖 Intelligence</h3>
                 <p>
-                    Automatiser les contrôles répétitifs tout en gardant
-                    une explication compréhensible.
+                    Repérer les comportements numériques atypiques.
                 </p>
             </div>
             """,
@@ -814,47 +1035,9 @@ def afficher_accueil():
         st.markdown(
             """
             <div class="card">
-                <h3>🇩🇯 Impact</h3>
+                <h3>📊 Résultat</h3>
                 <p>
-                    Contribuer à une administration numérique plus fiable,
-                    plus efficace et plus transparente.
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    st.markdown(
-        '<h2 class="section-title">Le problème traité</h2>',
-        unsafe_allow_html=True
-    )
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown(
-            """
-            <div class="card">
-                <h3>Des données parfois difficiles à exploiter</h3>
-                <p>
-                    Un fichier peut contenir des informations manquantes,
-                    des doublons, des dates incorrectes, des formats
-                    incohérents ou des valeurs impossibles.
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    with col2:
-        st.markdown(
-            """
-            <div class="card">
-                <h3>Une décision dépendante de la qualité</h3>
-                <p>
-                    Lorsque les données sont incorrectes, les statistiques,
-                    les rapports et les décisions peuvent également être
-                    moins fiables.
+                    Produire un rapport clair et téléchargeable.
                 </p>
             </div>
             """,
@@ -871,27 +1054,27 @@ def afficher_objectifs():
     objectifs = [
         (
             "Fiabiliser les données",
-            "Repérer les erreurs avant l'utilisation des données."
+            "Identifier les erreurs avant l'utilisation des fichiers."
         ),
         (
-            "Réduire le travail manuel",
-            "Automatiser les contrôles répétitifs des agents."
+            "Automatiser les contrôles",
+            "Réduire le temps consacré aux vérifications manuelles."
+        ),
+        (
+            "Détecter les anomalies",
+            "Combiner règles métier et détection statistique."
         ),
         (
             "Améliorer la décision",
-            "Produire des indicateurs fondés sur des données vérifiées."
+            "Fournir des données plus propres aux analystes."
         ),
         (
-            "Renforcer la gouvernance",
-            "Améliorer la traçabilité et la documentation des données."
+            "Renforcer la traçabilité",
+            "Conserver un rapport et un journal des modifications."
         ),
         (
-            "Protéger la confidentialité",
-            "Utiliser des données publiques, synthétiques ou anonymisées."
-        ),
-        (
-            "Préparer le déploiement",
-            "Construire une base adaptable aux besoins des institutions."
+            "Respecter la confidentialité",
+            "Utiliser des données publiques ou anonymisées."
         )
     ]
 
@@ -926,27 +1109,15 @@ def afficher_fonctionnalites():
             "CSV, Excel, JSON et ODS."
         ),
         (
-            "🔎 Valeurs manquantes",
-            "Identification des cellules vides ou incomplètes."
+            "🔎 Contrôle des règles",
+            "Valeurs manquantes, doublons et formats invalides."
         ),
         (
-            "🔁 Doublons",
-            "Détection des identifiants répétés."
+            "🤖 IsolationForest",
+            "Détection des lignes numériques atypiques."
         ),
         (
-            "📅 Dates invalides",
-            "Contrôle des dates non reconnues."
-        ),
-        (
-            "📞 Formats incorrects",
-            "Contrôle des numéros et valeurs mal formés."
-        ),
-        (
-            "⚠️ Valeurs impossibles",
-            "Détection des âges négatifs ou irréalistes."
-        ),
-        (
-            "📊 Score qualité",
+            "📊 Score de qualité",
             "Indicateur synthétique de l'état du fichier."
         ),
         (
@@ -954,12 +1125,20 @@ def afficher_fonctionnalites():
             "Génération d'une copie nettoyée."
         ),
         (
-            "📝 Traçabilité",
-            "Journal des modifications effectuées."
+            "📝 Journal",
+            "Historique des modifications proposées."
         ),
         (
-            "⬇️ Export",
-            "Téléchargement des rapports et fichiers."
+            "⬇️ Rapports",
+            "Téléchargement des résultats en CSV."
+        ),
+        (
+            "🔐 Traçabilité",
+            "Empreinte technique du fichier analysé."
+        ),
+        (
+            "✅ Validation humaine",
+            "Les corrections doivent être vérifiées."
         )
     ]
 
@@ -1000,8 +1179,8 @@ def afficher_cible():
         "Services de suivi-évaluation",
         "Analystes de données",
         "Chercheurs",
-        "ONG et organisations de développement",
-        "PME et startups numériques"
+        "ONG",
+        "Startups numériques"
     ]
 
     for cible in cibles:
@@ -1015,9 +1194,9 @@ def afficher_cible():
         <div class="card">
             <h3>Exemple d'utilisation</h3>
             <p>
-                Un agent charge un fichier administratif, examine les
-                anomalies détectées, vérifie les corrections proposées,
-                puis télécharge le rapport et la copie nettoyée.
+                Un agent charge un fichier administratif, observe les erreurs
+                détectées par les règles et par IsolationForest, vérifie les
+                résultats, puis télécharge le rapport.
             </p>
         </div>
         """,
@@ -1035,32 +1214,32 @@ def afficher_methode():
         (
             "1",
             "Importer",
-            "Charger un fichier public, synthétique ou anonymisé."
+            "Charger un fichier synthétique, public ou anonymisé."
         ),
         (
             "2",
-            "Analyser",
-            "Examiner automatiquement la structure et le contenu."
+            "Contrôler",
+            "Appliquer les règles de qualité."
         ),
         (
             "3",
-            "Détecter",
-            "Identifier les erreurs et anomalies."
+            "Apprendre",
+            "IsolationForest observe les colonnes numériques."
         ),
         (
             "4",
-            "Expliquer",
-            "Présenter la cause et le niveau de chaque problème."
+            "Détecter",
+            "Identifier les lignes statistiquement atypiques."
         ),
         (
             "5",
-            "Nettoyer",
-            "Générer une copie nettoyée après contrôle."
+            "Expliquer",
+            "Présenter le type et la cause du problème."
         ),
         (
             "6",
             "Exporter",
-            "Télécharger le rapport et le journal."
+            "Télécharger le rapport et la copie nettoyée."
         )
     ]
 
@@ -1090,7 +1269,7 @@ def afficher_donnees():
     )
 
     st.warning(
-        "N'importez pas de données personnelles réelles dans ce prototype."
+        "N'importez pas de données personnelles réelles."
     )
 
     col1, col2 = st.columns(2)
@@ -1101,8 +1280,7 @@ def afficher_donnees():
             <div class="card">
                 <h3>Données recommandées</h3>
                 <p>
-                    Utilisez des données synthétiques, publiques ou
-                    anonymisées créées spécialement pour la démonstration.
+                    Données synthétiques, publiques ou anonymisées.
                 </p>
             </div>
             """,
@@ -1115,8 +1293,8 @@ def afficher_donnees():
             <div class="card">
                 <h3>Validation humaine</h3>
                 <p>
-                    Les corrections proposées doivent être vérifiées
-                    par un utilisateur avant leur utilisation officielle.
+                    Une anomalie détectée par l'IA n'est pas forcément
+                    une erreur. Elle doit être vérifiée par un agent.
                 </p>
             </div>
             """,
@@ -1126,11 +1304,11 @@ def afficher_donnees():
     st.markdown(
         """
         <div class="card">
-            <h3>Limites du prototype</h3>
+            <h3>Limites d'IsolationForest</h3>
             <p>
-                DataClean détecte des problèmes techniques et certaines
-                incohérences métier. Il ne peut pas garantir à lui seul
-                que chaque information est administrativement vraie.
+                Le modèle détecte des comportements atypiques dans les
+                colonnes numériques. Il ne connaît pas automatiquement
+                la vérité administrative et peut produire des faux positifs.
             </p>
         </div>
         """,
@@ -1140,7 +1318,7 @@ def afficher_donnees():
 
 def afficher_a_propos():
     st.markdown(
-        '<h1 class="section-title">ℹ️ À propos</h1>',
+        '<h1 class="section-title">ℹ️ À propos du projet</h1>',
         unsafe_allow_html=True
     )
 
@@ -1153,9 +1331,8 @@ def afficher_a_propos():
                 et à la gouvernance des données publiques.
             </p>
             <p>
-                Le projet montre comment l'automatisation et l'analyse
-                intelligente peuvent aider les agents à repérer les erreurs,
-                améliorer leurs fichiers et prendre de meilleures décisions.
+                Il combine des règles métier explicables et une méthode
+                d'apprentissage automatique non supervisé.
             </p>
         </div>
         """,
@@ -1165,13 +1342,13 @@ def afficher_a_propos():
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.metric("Version", "Prototype 1.0")
+        st.metric("Version", "Prototype 2.0")
 
     with col2:
         st.metric("Pays cible", "Djibouti")
 
     with col3:
-        st.metric("Données", "Synthétiques")
+        st.metric("Modèle IA", "IsolationForest")
 
 
 def afficher_contact():
@@ -1181,8 +1358,8 @@ def afficher_contact():
     )
 
     st.write(
-        "Cette page permet de présenter le projet, "
-        "de demander une démonstration ou de proposer une collaboration."
+        "Cette page permet de demander une présentation "
+        "ou une démonstration du projet."
     )
 
     with st.form("formulaire_contact"):
@@ -1234,9 +1411,9 @@ def afficher_analyseur():
     st.markdown(
         """
         <div class="hero">
-            <h1>📊 Analyseur de données</h1>
+            <h1>📊 Analyseur intelligent</h1>
             <p>
-                Détectez les anomalies et générez un rapport explicable.
+                Détection des erreurs par règles et IsolationForest.
             </p>
         </div>
         """,
@@ -1387,8 +1564,8 @@ st.markdown(
             Transformation numérique
         </p>
         <p>
-            Prototype de démonstration destiné aux données
-            publiques, synthétiques ou anonymisées.
+            Prototype utilisant des données publiques,
+            synthétiques ou anonymisées.
         </p>
         <p>
             Mise à jour :
