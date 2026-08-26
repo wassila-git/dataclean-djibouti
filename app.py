@@ -1,17 +1,16 @@
 import io
-import re
-from urllib.parse import urlparse
+import hashlib
+from datetime import datetime
 
 import pandas as pd
-import requests
 import streamlit as st
-from bs4 import BeautifulSoup
 
 
 st.set_page_config(
     page_title="DataClean Djibouti",
     page_icon="🇩🇯",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 
@@ -23,43 +22,78 @@ st.markdown(
         color: #172033;
     }
 
+    .block-container {
+        max-width: 1250px;
+        padding-top: 2rem;
+        padding-bottom: 3rem;
+    }
+
     .hero {
-        background: linear-gradient(135deg, #0072ce, #00a896);
-        padding: 30px;
-        border-radius: 18px;
+        background: linear-gradient(135deg, #006bb6, #00a896);
+        padding: 48px 42px;
+        border-radius: 24px;
         color: white;
         margin-bottom: 25px;
     }
 
-    .hero h1,
+    .hero h1 {
+        color: white !important;
+        font-size: 46px;
+        margin-bottom: 12px;
+    }
+
     .hero p {
         color: white !important;
-    }
-
-    .hero h1 {
-        font-size: 40px;
-    }
-
-    .hero p {
-        font-size: 18px;
+        font-size: 20px;
+        margin-bottom: 0;
     }
 
     .card {
         background-color: white;
-        color: #172033;
-        padding: 24px;
-        border-radius: 16px;
-        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+        padding: 25px;
+        border-radius: 18px;
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.08);
         margin-bottom: 20px;
+        min-height: 170px;
     }
 
-    .card h2 {
-        color: #0072ce !important;
+    .card h3 {
+        color: #006bb6 !important;
+        margin-top: 0;
     }
 
     .card p {
         color: #26364d !important;
-        font-size: 17px;
+        line-height: 1.6;
+    }
+
+    .section-title {
+        color: #006bb6 !important;
+        margin-top: 35px;
+        margin-bottom: 12px;
+    }
+
+    .badge {
+        display: inline-block;
+        background-color: #e4f4f1;
+        color: #007d70;
+        padding: 7px 13px;
+        border-radius: 20px;
+        margin: 4px;
+        font-weight: 600;
+    }
+
+    .footer {
+        background-color: #202330;
+        color: white;
+        padding: 28px;
+        border-radius: 18px;
+        margin-top: 40px;
+    }
+
+    .footer h3,
+    .footer p {
+        color: white !important;
     }
 
     section[data-testid="stSidebar"] {
@@ -196,7 +230,7 @@ def analyser_donnees(df):
                             "age",
                             "Valeur impossible",
                             str(age),
-                            "L'âge doit être entre 0 et 120 ans.",
+                            "L'âge doit être compris entre 0 et 120 ans.",
                             "Vérifier l'âge dans la source officielle."
                         )
 
@@ -288,139 +322,77 @@ def analyser_donnees(df):
                 "Conserver une seule fiche après vérification."
             )
 
-    for colonne in df.columns:
-        if df[colonne].isna().all():
-            ajouter_anomalie(
-                anomalies,
-                0,
-                colonne,
-                "Colonne vide",
-                "",
-                "La colonne ne contient aucune donnée.",
-                "Supprimer ou compléter la colonne."
-            )
-
-    noms_normalises = {}
-
-    for colonne in df.columns:
-        nom = re.sub(
-            r"[^a-z0-9]",
-            "",
-            str(colonne).lower()
-        )
-
-        if nom in noms_normalises:
-            ajouter_anomalie(
-                anomalies,
-                1,
-                colonne,
-                "Colonne similaire",
-                str(colonne),
-                "Deux colonnes ont des noms très similaires.",
-                "Renommer les colonnes."
-            )
-
-        noms_normalises[nom] = colonne
-
     return pd.DataFrame(anomalies)
 
 
-def analyser_url(url):
-    url = url.strip()
-
-    try:
-        adresse = urlparse(url)
-
-        if adresse.scheme not in {"http", "https"}:
-            return None, (
-                "L'URL doit commencer par http:// ou https://"
-            )
-
-        if not adresse.netloc:
-            return None, "L'URL semble incomplète."
-
-        reponse = requests.get(
-            url,
-            timeout=15,
-            headers={
-                "User-Agent": "DataClean-Djibouti/1.0"
-            }
-        )
-
-        reponse.raise_for_status()
-
-        contenu = reponse.text[:2_000_000]
-
-        soup = BeautifulSoup(
-            contenu,
-            "html.parser"
-        )
-
-        for element in soup(
-            ["script", "style", "noscript"]
-        ):
-            element.decompose()
-
-        texte = soup.get_text(
-            separator=" ",
-            strip=True
-        )
-
-        motifs = [
-            "ignore previous instructions",
-            "ignore all previous instructions",
-            "system prompt",
-            "révèle tes instructions",
-            "ignore les instructions précédentes",
-            "bypass security",
-            "jailbreak",
-            "do not follow the rules",
-            "ne respecte pas les règles"
-        ]
-
-        texte_minuscule = texte.lower()
-
-        indices = [
-            motif
-            for motif in motifs
-            if motif in texte_minuscule
-        ]
-
-        if len(indices) == 0:
-            score = 5
-            decision = "AUTORISER"
-            explication = (
-                "Aucun indice évident détecté dans le texte analysé."
-            )
-
-        elif len(indices) == 1:
-            score = 65
-            decision = "SIGNALER"
-            explication = (
-                "Un indice potentiellement suspect a été détecté."
-            )
-
-        else:
-            score = 95
-            decision = "BLOQUER"
-            explication = (
-                "Plusieurs indices potentiellement suspects ont été détectés."
-            )
-
-        resultat = {
-            "Score": score,
-            "Décision": decision,
-            "Indices": indices,
-            "Explication": explication,
-            "Caractères analysés": len(texte)
+def creer_donnees_demo():
+    return pd.DataFrame(
+        {
+            "identifiant": [
+                "DJ001",
+                "DJ002",
+                "DJ003",
+                "DJ003",
+                "DJ005",
+                "DJ006",
+                "DJ007"
+            ],
+            "nom": [
+                "Ahmed Ali",
+                "Fatou Hassan",
+                "Mohamed Omar",
+                "Mohamed Omar",
+                "Sahra Ismail",
+                None,
+                "Ali Hassan"
+            ],
+            "commune": [
+                "Djibouti",
+                "Balbala",
+                "Boulaos",
+                "Boulaos",
+                "Inconnu",
+                "Balbala",
+                "Djibouti"
+            ],
+            "age": [
+                28,
+                None,
+                145,
+                145,
+                32,
+                26,
+                -4
+            ],
+            "date_inscription": [
+                "2025-01-12",
+                "2025-02-30",
+                "2025-03-10",
+                "2025-03-10",
+                "2025-04-18",
+                "2025-05-02",
+                "2025-06-20"
+            ],
+            "telephone": [
+                "77881234",
+                "77881235",
+                None,
+                None,
+                "123",
+                "77881239",
+                "77881240"
+            ],
+            "statut": [
+                "Actif",
+                "Actif",
+                "Actif",
+                "Actif",
+                "Inactif",
+                "Inactif",
+                "Actif"
+            ]
         }
-
-        return resultat, None
-
-    except requests.exceptions.RequestException as erreur:
-        return None, (
-            f"Impossible d'accéder à cette URL : {erreur}"
-        )
+    )
 
 
 def afficher_analyse(df):
@@ -448,7 +420,10 @@ def afficher_analyse(df):
     else:
         score = 0
 
-    st.subheader("👁️ Aperçu des données")
+    st.markdown(
+        '<h2 class="section-title">📊 Tableau de bord</h2>',
+        unsafe_allow_html=True
+    )
 
     st.dataframe(
         df,
@@ -487,7 +462,10 @@ def afficher_analyse(df):
         )
 
     else:
-        st.subheader("🚨 Rapport des anomalies")
+        st.markdown(
+            '<h3 class="section-title">🚨 Rapport des anomalies</h3>',
+            unsafe_allow_html=True
+        )
 
         st.dataframe(
             rapport,
@@ -501,7 +479,10 @@ def afficher_analyse(df):
             .reset_index(name="Nombre")
         )
 
-        st.subheader("📌 Résumé des anomalies")
+        st.markdown(
+            '<h3 class="section-title">📌 Résumé des anomalies</h3>',
+            unsafe_allow_html=True
+        )
 
         st.dataframe(
             resume,
@@ -545,7 +526,10 @@ def afficher_analyse(df):
             mime="text/csv"
         )
 
-    st.subheader("📈 Répartition des statuts")
+    st.markdown(
+        '<h3 class="section-title">📈 Répartition des statuts</h3>',
+        unsafe_allow_html=True
+    )
 
     if "statut" in df.columns:
         compte = (
@@ -561,9 +545,542 @@ def afficher_analyse(df):
             "Aucune colonne statut trouvée."
         )
 
+    empreinte = hashlib.sha256(
+        pd.util.hash_pandas_object(
+            df,
+            index=True
+        ).values
+    ).hexdigest()[:16]
+
+    st.caption(
+        f"Traçabilité : empreinte du fichier analysé = {empreinte}"
+    )
+
+
+def afficher_accueil():
+    st.markdown(
+        """
+        <div class="hero">
+            <h1>🇩🇯 DataClean Djibouti</h1>
+            <p>
+                Une solution intelligente pour améliorer la qualité,
+                la fiabilité et la gouvernance des données publiques.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        """
+        <div class="card">
+            <h2>Des données fiables pour de meilleures décisions</h2>
+            <p>
+                DataClean Djibouti aide les administrations, les institutions
+                et les acteurs publics à identifier les erreurs présentes
+                dans leurs jeux de données avant leur utilisation.
+            </p>
+            <p>
+                Notre solution analyse les fichiers, détecte les anomalies,
+                explique les problèmes et propose des actions de vérification.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown(
+            """
+            <div class="card">
+                <h3>🎯 Notre objectif</h3>
+                <p>
+                    Améliorer la qualité des données publiques et renforcer
+                    la confiance dans les indicateurs utilisés pour la décision.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with col2:
+        st.markdown(
+            """
+            <div class="card">
+                <h3>🤖 Notre approche</h3>
+                <p>
+                    Combiner des règles de contrôle, l'analyse statistique
+                    et des explications compréhensibles par les utilisateurs.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with col3:
+        st.markdown(
+            """
+            <div class="card">
+                <h3>🇩🇯 Notre impact</h3>
+                <p>
+                    Contribuer à une administration numérique plus efficace,
+                    plus transparente et mieux adaptée au contexte djiboutien.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    st.markdown(
+        '<h2 class="section-title">Pourquoi DataClean ?</h2>',
+        unsafe_allow_html=True
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown(
+            """
+            <div class="card">
+                <h3>Le problème</h3>
+                <p>
+                    Les bases de données peuvent contenir des doublons,
+                    des informations manquantes, des formats invalides
+                    ou des valeurs incohérentes.
+                </p>
+                <p>
+                    Ces problèmes peuvent fausser les statistiques
+                    et réduire la qualité des décisions publiques.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with col2:
+        st.markdown(
+            """
+            <div class="card">
+                <h3>La réponse</h3>
+                <p>
+                    DataClean fournit une analyse rapide, structurée
+                    et explicable afin d'aider les agents à vérifier
+                    et améliorer leurs données.
+                </p>
+                <p>
+                    L'outil conserve les données originales et propose
+                    des actions qui doivent être validées par un humain.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+
+def afficher_objectifs():
+    st.markdown(
+        '<h1 class="section-title">🎯 Objectifs du projet</h1>',
+        unsafe_allow_html=True
+    )
+
+    st.write(
+        "DataClean Djibouti répond à un besoin concret : "
+        "améliorer la qualité des données utilisées par les organisations "
+        "publiques et les acteurs de la transformation numérique."
+    )
+
+    objectifs = [
+        (
+            "Fiabiliser les données",
+            "Identifier rapidement les erreurs qui peuvent fausser les indicateurs."
+        ),
+        (
+            "Faciliter le travail des agents",
+            "Réduire le temps consacré aux contrôles manuels répétitifs."
+        ),
+        (
+            "Améliorer la décision",
+            "Fournir des indicateurs fiables et un tableau de bord compréhensible."
+        ),
+        (
+            "Renforcer la gouvernance",
+            "Favoriser des données mieux documentées, traçables et contrôlées."
+        ),
+        (
+            "Respecter la confidentialité",
+            "Utiliser des données synthétiques, publiques ou anonymisées."
+        ),
+        (
+            "Préparer le déploiement local",
+            "Proposer une solution réaliste dans le contexte djiboutien."
+        )
+    ]
+
+    for debut in range(0, len(objectifs), 3):
+        colonnes = st.columns(3)
+
+        for position, colonne in enumerate(colonnes):
+            if debut + position < len(objectifs):
+                titre, texte = objectifs[debut + position]
+
+                with colonne:
+                    st.markdown(
+                        f"""
+                        <div class="card">
+                            <h3>{titre}</h3>
+                            <p>{texte}</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
+
+def afficher_fonctionnalites():
+    st.markdown(
+        '<h1 class="section-title">⚙️ Fonctionnalités</h1>',
+        unsafe_allow_html=True
+    )
+
+    fonctionnalites = [
+        (
+            "📂 Importation de fichiers",
+            "Import de fichiers CSV, Excel, JSON et ODS."
+        ),
+        (
+            "🔎 Valeurs manquantes",
+            "Repérage des cellules vides ou incomplètes."
+        ),
+        (
+            "🔁 Doublons",
+            "Détection des identifiants ou lignes répétées."
+        ),
+        (
+            "📅 Formats invalides",
+            "Contrôle des dates, numéros de téléphone et valeurs numériques."
+        ),
+        (
+            "⚠️ Valeurs impossibles",
+            "Détection des valeurs hors limites, comme un âge négatif ou supérieur à 120 ans."
+        ),
+        (
+            "📊 Score de qualité",
+            "Calcul d'un score synthétique pour apprécier l'état général du fichier."
+        ),
+        (
+            "💡 Explications",
+            "Chaque anomalie est accompagnée d'une explication claire."
+        ),
+        (
+            "✅ Actions proposées",
+            "Le système propose une correction ou une vérification humaine."
+        ),
+        (
+            "⬇️ Rapport téléchargeable",
+            "Export du rapport complet au format CSV."
+        )
+    ]
+
+    for debut in range(0, len(fonctionnalites), 3):
+        colonnes = st.columns(3)
+
+        for position, colonne in enumerate(colonnes):
+            if debut + position < len(fonctionnalites):
+                titre, texte = fonctionnalites[debut + position]
+
+                with colonne:
+                    st.markdown(
+                        f"""
+                        <div class="card">
+                            <h3>{titre}</h3>
+                            <p>{texte}</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
+
+def afficher_cible():
+    st.markdown(
+        '<h1 class="section-title">👥 Public cible</h1>',
+        unsafe_allow_html=True
+    )
+
+    st.write(
+        "La solution est conçue pour les organisations qui produisent, "
+        "utilisent ou publient des données."
+    )
+
+    cibles = [
+        "Administrations publiques",
+        "Établissements publics",
+        "Collectivités et services locaux",
+        "Organisations de développement",
+        "Chercheurs et analystes",
+        "PME et startups numériques",
+        "Responsables de bases de données",
+        "Agents chargés du suivi-évaluation"
+    ]
+
+    for cible in cibles:
+        st.markdown(
+            f'<span class="badge">{cible}</span>',
+            unsafe_allow_html=True
+        )
+
+    st.markdown(
+        """
+        <div class="card">
+            <h3>Exemple d'utilisation</h3>
+            <p>
+                Un service public reçoit un fichier contenant des dossiers
+                administratifs. Avant de calculer ses statistiques, l'agent
+                charge le fichier dans DataClean, examine les anomalies,
+                vérifie les corrections proposées et télécharge le rapport.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def afficher_methode():
+    st.markdown(
+        '<h1 class="section-title">🔄 Comment ça marche ?</h1>',
+        unsafe_allow_html=True
+    )
+
+    etapes = [
+        (
+            "1",
+            "Importer",
+            "L'utilisateur charge un fichier public, synthétique ou anonymisé."
+        ),
+        (
+            "2",
+            "Analyser",
+            "DataClean examine la structure et le contenu du fichier."
+        ),
+        (
+            "3",
+            "Détecter",
+            "Les valeurs manquantes, doublons, incohérences et formats invalides sont identifiés."
+        ),
+        (
+            "4",
+            "Expliquer",
+            "Chaque problème est présenté avec son niveau et son explication."
+        ),
+        (
+            "5",
+            "Vérifier",
+            "L'agent examine les corrections proposées avant toute modification."
+        ),
+        (
+            "6",
+            "Décider",
+            "Les indicateurs propres peuvent ensuite être utilisés pour l'analyse."
+        )
+    ]
+
+    for debut in range(0, len(etapes), 3):
+        colonnes = st.columns(3)
+
+        for position, colonne in enumerate(colonnes):
+            if debut + position < len(etapes):
+                numero, titre, texte = etapes[debut + position]
+
+                with colonne:
+                    st.markdown(
+                        f"""
+                        <div class="card">
+                            <h3>{numero}. {titre}</h3>
+                            <p>{texte}</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
+
+def afficher_donnees():
+    st.markdown(
+        '<h1 class="section-title">🔐 Données et confidentialité</h1>',
+        unsafe_allow_html=True
+    )
+
+    st.warning(
+        "N'utilisez pas de données personnelles réelles dans cette démonstration."
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown(
+            """
+            <div class="card">
+                <h3>Types de données autorisés</h3>
+                <p>
+                    Données synthétiques, données publiques ou données
+                    anonymisées produites pour la démonstration.
+                </p>
+                <p>
+                    Les exemples utilisés par DataClean ne représentent
+                    pas de personnes réelles.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with col2:
+        st.markdown(
+            """
+            <div class="card">
+                <h3>Principe de validation humaine</h3>
+                <p>
+                    DataClean ne modifie pas automatiquement les données
+                    originales. Il propose des corrections qui doivent
+                    être vérifiées par un agent compétent.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    st.markdown(
+        """
+        <div class="card">
+            <h3>Traçabilité</h3>
+            <p>
+                Chaque fichier analysé peut être associé à une empreinte
+                technique afin de faciliter le suivi de la démonstration
+                sans afficher le contenu des données.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+def afficher_a_propos():
+    st.markdown(
+        '<h1 class="section-title">ℹ️ À propos du projet</h1>',
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        """
+        <div class="card">
+            <h3>DataClean Djibouti</h3>
+            <p>
+                DataClean Djibouti est un prototype d'aide à la gouvernance
+                des données publiques. Il a été conçu pour montrer comment
+                l'intelligence artificielle et l'analyse automatisée peuvent
+                contribuer à une meilleure qualité des données.
+            </p>
+            <p>
+                Le projet s'inscrit dans une démarche de transformation
+                numérique, de modernisation administrative et de prise
+                de décision fondée sur des informations plus fiables.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric("Version", "Prototype 1.0")
+
+    with col2:
+        st.metric("Pays cible", "Djibouti")
+
+    with col3:
+        st.metric("Données", "Synthétiques")
+
+
+def afficher_contact():
+    st.markdown(
+        '<h1 class="section-title">📩 Contact et démonstration</h1>',
+        unsafe_allow_html=True
+    )
+
+    st.write(
+        "Pour une présentation, une démonstration ou une collaboration, "
+        "utilisez les coordonnées de l'équipe du projet."
+    )
+
+    st.info(
+        "Cette application est une démonstration. "
+        "Les données confidentielles ne doivent pas être importées."
+    )
+
+    with st.form("formulaire_contact"):
+        nom = st.text_input("Votre nom")
+        email = st.text_input("Votre adresse e-mail")
+        message = st.text_area("Votre message")
+
+        envoyer = st.form_submit_button(
+            "Envoyer le message"
+        )
+
+        if envoyer:
+            if not nom or not email or not message:
+                st.warning(
+                    "Veuillez remplir tous les champs."
+                )
+            else:
+                st.success(
+                    "Message enregistré pour la démonstration."
+                )
+
+
+def afficher_plan_du_site():
+    st.markdown(
+        '<h1 class="section-title">🗺️ Plan du site</h1>',
+        unsafe_allow_html=True
+    )
+
+    st.markdown(
+        """
+        <div class="card">
+            <p>🏠 Accueil — Présentation générale de DataClean.</p>
+            <p>🎯 Objectifs — Problème traité et objectifs du projet.</p>
+            <p>⚙️ Fonctionnalités — Services proposés par la solution.</p>
+            <p>👥 Public cible — Utilisateurs et organisations concernés.</p>
+            <p>🔄 Méthode — Étapes d'utilisation de l'outil.</p>
+            <p>📊 Analyse — Importation et contrôle d'un fichier.</p>
+            <p>🔐 Données — Confidentialité, sécurité et traçabilité.</p>
+            <p>ℹ️ À propos — Présentation du prototype.</p>
+            <p>📩 Contact — Formulaire de démonstration.</p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 
 st.sidebar.title("🌍 DataClean Djibouti")
-st.sidebar.write("Prototype d'analyse de données")
+st.sidebar.caption("Prototype de gouvernance des données")
+st.sidebar.markdown("---")
+
+page = st.sidebar.radio(
+    "Menu principal",
+    [
+        "Accueil",
+        "Objectifs",
+        "Fonctionnalités",
+        "Public cible",
+        "Comment ça marche",
+        "Analyser un fichier",
+        "Données et confidentialité",
+        "À propos",
+        "Contact",
+        "Plan du site"
+    ]
+)
+
 st.sidebar.markdown("---")
 st.sidebar.info(
     "Utilisez uniquement des données publiques, "
@@ -571,210 +1088,118 @@ st.sidebar.info(
 )
 
 
-st.markdown(
-    """
-    <div class="hero">
-        <h1>🇩🇯 DataClean Djibouti</h1>
-        <p>
-            Analyse intelligente de la qualité des données publiques
-        </p>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+if page == "Accueil":
+    afficher_accueil()
 
+elif page == "Objectifs":
+    afficher_objectifs()
 
-st.markdown(
-    """
-    <div class="card">
-        <h2>📊 Analysez un fichier administratif</h2>
-        <p>
-            Importez un fichier CSV, Excel, JSON ou ODS.
-            DataClean détecte les valeurs manquantes,
-            doublons, formats incorrects et valeurs impossibles.
-        </p>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+elif page == "Fonctionnalités":
+    afficher_fonctionnalites()
 
+elif page == "Public cible":
+    afficher_cible()
 
-fichier = st.file_uploader(
-    "📂 Choisissez un fichier de données",
-    type=[
-        "csv",
-        "xlsx",
-        "json",
-        "ods"
-    ]
-)
+elif page == "Comment ça marche":
+    afficher_methode()
 
+elif page == "Données et confidentialité":
+    afficher_donnees()
 
-if fichier is None:
-    st.info(
-        "Aucun fichier importé. "
-        "Vous pouvez lancer la démonstration."
+elif page == "À propos":
+    afficher_a_propos()
+
+elif page == "Contact":
+    afficher_contact()
+
+elif page == "Plan du site":
+    afficher_plan_du_site()
+
+elif page == "Analyser un fichier":
+    st.markdown(
+        """
+        <div class="hero">
+            <h1>📊 Analyseur de données</h1>
+            <p>
+                Identifiez les anomalies et obtenez un rapport explicable.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
     )
 
-    if st.button(
-        "🧪 Charger les données de démonstration"
-    ):
-        donnees_demo = pd.DataFrame(
-            {
-                "identifiant": [
-                    "DJ001",
-                    "DJ002",
-                    "DJ003",
-                    "DJ003",
-                    "DJ005",
-                    "DJ006",
-                    "DJ007"
-                ],
-                "nom": [
-                    "Ahmed Ali",
-                    "Fatou Hassan",
-                    "Mohamed Omar",
-                    "Mohamed Omar",
-                    "Sahra Ismail",
-                    None,
-                    "Ali Hassan"
-                ],
-                "commune": [
-                    "Djibouti",
-                    "Balbala",
-                    "Boulaos",
-                    "Boulaos",
-                    "Inconnu",
-                    "Balbala",
-                    "Djibouti"
-                ],
-                "age": [
-                    28,
-                    None,
-                    145,
-                    145,
-                    32,
-                    26,
-                    -4
-                ],
-                "date_inscription": [
-                    "2025-01-12",
-                    "2025-02-30",
-                    "2025-03-10",
-                    "2025-03-10",
-                    "2025-04-18",
-                    "2025-05-02",
-                    "2025-06-20"
-                ],
-                "telephone": [
-                    "77881234",
-                    "77881235",
-                    None,
-                    None,
-                    "123",
-                    "77881239",
-                    "77881240"
-                ],
-                "statut": [
-                    "Actif",
-                    "Actif",
-                    "Actif",
-                    "Actif",
-                    "Inactif",
-                    "Inactif",
-                    "Actif"
-                ]
-            }
-        )
-
-        st.session_state["donnees"] = donnees_demo
-
-else:
-    try:
-        st.session_state["donnees"] = lire_fichier(
-            fichier
-        )
-
-    except Exception as erreur:
-        st.error(
-            f"Impossible de lire le fichier : {erreur}"
-        )
-
-
-if "donnees" in st.session_state:
-    afficher_analyse(
-        st.session_state["donnees"]
+    fichier = st.file_uploader(
+        "📂 Choisissez un fichier CSV, Excel, JSON ou ODS",
+        type=[
+            "csv",
+            "xlsx",
+            "json",
+            "ods"
+        ]
     )
 
+    col1, col2 = st.columns(2)
 
-st.markdown("---")
-st.subheader("🌐 Tester une URL publique")
+    with col1:
+        charger_demo = st.button(
+            "🧪 Charger les données de démonstration"
+        )
 
-st.caption(
-    "Cette fonction analyse uniquement le texte visible "
-    "d'une page web publique."
-)
+    with col2:
+        supprimer_donnees = st.button(
+            "🗑️ Réinitialiser"
+        )
 
-url = st.text_input(
-    "Entrez une adresse web",
-    placeholder="https://www.python.org"
-)
+    if supprimer_donnees:
+        if "donnees" in st.session_state:
+            del st.session_state["donnees"]
 
+        st.success(
+            "Les données de démonstration ont été supprimées."
+        )
+        st.rerun()
 
-if st.button("🔍 Analyser l'URL"):
-    if not url.strip():
-        st.warning(
-            "Veuillez saisir une URL."
+    if charger_demo:
+        st.session_state["donnees"] = creer_donnees_demo()
+
+    if fichier is not None:
+        try:
+            st.session_state["donnees"] = lire_fichier(
+                fichier
+            )
+
+        except Exception as erreur:
+            st.error(
+                f"Impossible de lire le fichier : {erreur}"
+            )
+
+    if "donnees" in st.session_state:
+        afficher_analyse(
+            st.session_state["donnees"]
         )
 
     else:
-        with st.spinner(
-            "Analyse de la page en cours..."
-        ):
-            resultat_url, erreur_url = analyser_url(
-                url
-            )
+        st.info(
+            "Importez un fichier ou chargez les données de démonstration."
+        )
 
-        if erreur_url:
-            st.error(erreur_url)
 
-        else:
-            st.success(
-                "Analyse terminée."
-            )
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.metric(
-                    "Score de suspicion",
-                    f'{resultat_url["Score"]} %'
-                )
-
-            with col2:
-                st.metric(
-                    "Décision",
-                    resultat_url["Décision"]
-                )
-
-            st.write(
-                "**Explication :**",
-                resultat_url["Explication"]
-            )
-
-            indices = resultat_url["Indices"]
-
-            st.write(
-                "**Indices détectés :**",
-                ", ".join(indices)
-                if indices
-                else "Aucun"
-            )
-
-            st.write(
-                "**Contenu analysé :**",
-                (
-                    f'{resultat_url["Caractères analysés"]:,} '
-                    "caractères"
-                )
-            )
+st.markdown(
+    f"""
+    <div class="footer">
+        <h3>🇩🇯 DataClean Djibouti</h3>
+        <p>
+            Qualité des données publiques • Innovation •
+            Transformation numérique
+        </p>
+        <p>
+            Prototype présenté pour démontrer une solution
+            réaliste et déployable dans le contexte djiboutien.
+        </p>
+        <p>
+            Dernière mise à jour : {datetime.now().strftime("%d/%m/%Y")}
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
