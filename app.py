@@ -1,11 +1,16 @@
-import hashlib
 import io
+import re
+import json
+import hashlib
 from datetime import datetime
 
 import pandas as pd
 import streamlit as st
-from sklearn.ensemble import IsolationForest
 
+
+# ============================================================
+# CONFIGURATION DE LA PAGE
+# ============================================================
 
 st.set_page_config(
     page_title="DataClean Djibouti",
@@ -14,6 +19,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+
+# ============================================================
+# STYLE CSS
+# ============================================================
 
 st.markdown(
     """
@@ -29,12 +38,34 @@ st.markdown(
         padding-bottom: 3rem;
     }
 
+    section[data-testid="stSidebar"] {
+        background-color: #202330;
+    }
+
+    section[data-testid="stSidebar"] h1,
+    section[data-testid="stSidebar"] h2,
+    section[data-testid="stSidebar"] h3,
+    section[data-testid="stSidebar"] p,
+    section[data-testid="stSidebar"] label,
+    section[data-testid="stSidebar"] span,
+    section[data-testid="stSidebar"] div {
+        color: #ffffff;
+    }
+
+    section[data-testid="stSidebar"] [role="radiogroup"] label {
+        color: #ffffff !important;
+    }
+
+    section[data-testid="stSidebar"] [role="radiogroup"] label span {
+        color: #ffffff !important;
+    }
+
     .hero {
         background: linear-gradient(135deg, #006bb6, #00a896);
-        padding: 45px;
+        padding: 42px;
         border-radius: 24px;
         color: white;
-        margin-bottom: 25px;
+        margin-bottom: 28px;
     }
 
     .hero h1,
@@ -43,7 +74,7 @@ st.markdown(
     }
 
     .hero h1 {
-        font-size: 44px;
+        font-size: 42px;
         margin-bottom: 12px;
     }
 
@@ -53,17 +84,17 @@ st.markdown(
     }
 
     .card {
-        background-color: white;
+        background-color: #ffffff;
+        color: #172033;
         padding: 24px;
         border-radius: 18px;
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
         margin-bottom: 20px;
-        min-height: 150px;
     }
 
     .card h2,
     .card h3 {
-        color: #006bb6 !important;
+        color: #005a9c !important;
         margin-top: 0;
     }
 
@@ -73,39 +104,66 @@ st.markdown(
     }
 
     .section-title {
-        color: #006bb6 !important;
+        color: #005a9c !important;
         margin-top: 30px;
+        margin-bottom: 15px;
     }
 
     .badge {
         display: inline-block;
-        background-color: #e4f4f1;
-        color: #007d70;
+        background-color: #d8f3ee;
+        color: #00695c !important;
         padding: 8px 14px;
         border-radius: 20px;
         margin: 5px;
-        font-weight: 600;
+        font-weight: 700;
     }
 
-    .footer {
-        background-color: #202330;
-        color: white;
-        padding: 28px;
-        border-radius: 18px;
-        margin-top: 40px;
+    div.stButton > button {
+        background-color: #006bb6 !important;
+        color: #ffffff !important;
+        border: 1px solid #00558f !important;
+        border-radius: 8px !important;
+        font-weight: 700 !important;
+        min-height: 42px !important;
     }
 
-    .footer h3,
-    .footer p {
-        color: white !important;
+    div.stButton > button:hover {
+        background-color: #004f86 !important;
+        color: #ffffff !important;
     }
 
-    section[data-testid="stSidebar"] {
-        background-color: #202330;
+    div[data-testid="stDownloadButton"] button {
+        background-color: #006bb6 !important;
+        color: #ffffff !important;
+        border: 1px solid #00558f !important;
+        border-radius: 8px !important;
+        font-weight: 700 !important;
+        min-height: 42px !important;
     }
 
-    section[data-testid="stSidebar"] * {
-        color: white !important;
+    div[data-testid="stDownloadButton"] button:hover {
+        background-color: #004f86 !important;
+        color: #ffffff !important;
+    }
+
+    div[data-testid="stFileUploader"] {
+        background-color: #ffffff !important;
+        border: 2px dashed #006bb6 !important;
+        border-radius: 12px !important;
+        padding: 14px !important;
+    }
+
+    div[data-testid="stFileUploader"] *,
+    div[data-testid="stFileUploader"] label,
+    div[data-testid="stFileUploader"] span {
+        color: #172033 !important;
+    }
+
+    div[data-testid="stFileUploader"] button {
+        background-color: #006bb6 !important;
+        color: #ffffff !important;
+        border: none !important;
     }
 
     [data-testid="stMetricLabel"] {
@@ -117,72 +175,48 @@ st.markdown(
         color: #172033 !important;
         font-weight: 800 !important;
     }
+
+    [data-testid="stCaptionContainer"] {
+        color: #526174 !important;
+    }
+
+    div[data-testid="stAlert"] p {
+        color: #172033 !important;
+    }
+
+    div[data-testid="stSuccess"] p {
+        color: #14532d !important;
+    }
+
+    div[data-testid="stWarning"] p {
+        color: #713f12 !important;
+    }
+
+    div[data-testid="stInfo"] p {
+        color: #164e63 !important;
+    }
+
+    .footer {
+        background-color: #202330;
+        color: #ffffff;
+        padding: 28px;
+        border-radius: 18px;
+        margin-top: 40px;
+    }
+
+    .footer h3,
+    .footer p {
+        color: #ffffff !important;
+    }
     </style>
     """,
     unsafe_allow_html=True
 )
 
 
-def ajouter_anomalie(
-    anomalies,
-    ligne,
-    colonne,
-    type_anomalie,
-    valeur,
-    explication,
-    correction,
-    niveau="Moyen"
-):
-    anomalies.append(
-        {
-            "Ligne": ligne,
-            "Colonne": colonne,
-            "Type": type_anomalie,
-            "Valeur": valeur,
-            "Explication": explication,
-            "Correction proposée": correction,
-            "Niveau": niveau
-        }
-    )
-
-
-def lire_fichier(fichier):
-    nom = fichier.name.lower()
-    contenu = fichier.getvalue()
-
-    if nom.endswith(".csv"):
-        try:
-            return pd.read_csv(
-                io.BytesIO(contenu)
-            )
-        except UnicodeDecodeError:
-            return pd.read_csv(
-                io.BytesIO(contenu),
-                encoding="latin-1"
-            )
-
-    if nom.endswith(".xlsx"):
-        return pd.read_excel(
-            io.BytesIO(contenu),
-            engine="openpyxl"
-        )
-
-    if nom.endswith(".json"):
-        return pd.read_json(
-            io.BytesIO(contenu)
-        )
-
-    if nom.endswith(".ods"):
-        return pd.read_excel(
-            io.BytesIO(contenu),
-            engine="odf"
-        )
-
-    raise ValueError(
-        "Format non pris en charge. "
-        "Utilisez CSV, XLSX, JSON ou ODS."
-    )
-
+# ============================================================
+# DONNÉES DE DÉMONSTRATION
+# ============================================================
 
 def creer_donnees_demo():
     return pd.DataFrame(
@@ -199,77 +233,29 @@ def creer_donnees_demo():
                 "DJ009",
                 "DJ010"
             ],
-            "nom": [
-                "Ahmed Ali",
-                "Fatou Hassan",
-                "Mohamed Omar",
-                "Mohamed Omar",
-                "Sahra Ismail",
-                None,
-                "Ali Hassan",
-                "Hawa Omar",
-                "Omar Said",
-                "Amina Yusuf"
+            "nom_organisation": [
+                "Organisation A",
+                "Organisation B",
+                "Organisation C",
+                "Organisation C",
+                "Organisation D",
+                "Organisation E",
+                "Organisation F",
+                "Organisation G",
+                "Organisation H",
+                "Organisation I"
             ],
-            "commune": [
-                "Djibouti",
-                "Balbala",
-                "Boulaos",
-                "Boulaos",
-                "Inconnu",
-                "Balbala",
-                "Djibouti",
-                "Balbala",
-                "Boulaos",
-                "Djibouti"
-            ],
-            "age": [
-                28,
-                None,
-                145,
-                145,
-                32,
-                26,
-                -4,
-                31,
-                29,
-                200
-            ],
-            "revenu_mensuel": [
-                85000,
-                90000,
-                87000,
-                87000,
-                92000,
-                88000,
-                91000,
-                89500,
-                90500,
-                1500000
-            ],
-            "date_inscription": [
-                "2025-01-12",
-                "2025-02-30",
-                "2025-03-10",
-                "2025-03-10",
-                "2025-04-18",
-                "2025-05-02",
-                "2025-06-20",
-                "2025-07-01",
-                "2025-07-05",
-                "2025-07-10"
-            ],
-            "telephone": [
-                "77881234",
-                "77881235",
-                None,
-                None,
-                "123",
-                "77881239",
-                "77881240",
-                "77881241",
-                "77881242",
-                "77881243"
+            "secteur": [
+                "Éducation",
+                "Santé",
+                "Administration",
+                "Administration",
+                "Transport",
+                "Finance",
+                "Éducation",
+                "Santé",
+                "Transport",
+                "Finance"
             ],
             "statut": [
                 "Actif",
@@ -282,721 +268,154 @@ def creer_donnees_demo():
                 "Actif",
                 "Actif",
                 "Actif"
+            ],
+            "date_mise_a_jour": [
+                "2026-01-10",
+                "2026-01-11",
+                "2026-01-12",
+                "2026-01-12",
+                "2025-08-15",
+                "2025-09-20",
+                "2026-01-15",
+                "2026-01-17",
+                "2026-01-18",
+                "2026-01-20"
             ]
         }
     )
 
 
-def analyser_regles(df):
-    anomalies = []
+# ============================================================
+# LECTURE DES FICHIERS
+# ============================================================
 
-    communes_valides = {
-        "Djibouti",
-        "Balbala",
-        "Boulaos",
-        "Ras-Dika",
-        "Haramous"
-    }
+def lire_fichier(fichier):
+    nom = fichier.name.lower()
+    contenu = fichier.getvalue()
 
-    for index, ligne in df.iterrows():
-        numero_ligne = index + 2
+    if nom.endswith(".csv"):
+        essais = ["utf-8", "utf-8-sig", "latin-1"]
 
-        for colonne in df.columns:
-            valeur = ligne[colonne]
-
-            if pd.isna(valeur) or str(valeur).strip() == "":
-                ajouter_anomalie(
-                    anomalies,
-                    numero_ligne,
-                    colonne,
-                    "Valeur manquante",
-                    "",
-                    "Une information est absente.",
-                    "Compléter la valeur après vérification.",
-                    "Moyen"
+        for encodage in essais:
+            try:
+                return pd.read_csv(
+                    io.BytesIO(contenu),
+                    encoding=encodage
                 )
-
-        if "age" in df.columns:
-            age = ligne["age"]
-
-            if not pd.isna(age):
-                try:
-                    age_nombre = float(age)
-
-                    if age_nombre < 0 or age_nombre > 120:
-                        ajouter_anomalie(
-                            anomalies,
-                            numero_ligne,
-                            "age",
-                            "Valeur impossible",
-                            str(age),
-                            "L'âge doit être compris entre 0 et 120 ans.",
-                            "Vérifier l'âge dans la source officielle.",
-                            "Élevé"
-                        )
-
-                except (ValueError, TypeError):
-                    ajouter_anomalie(
-                        anomalies,
-                        numero_ligne,
-                        "age",
-                        "Format incorrect",
-                        str(age),
-                        "L'âge doit être numérique.",
-                        "Convertir la valeur en nombre.",
-                        "Élevé"
-                    )
-
-        if "commune" in df.columns:
-            commune = ligne["commune"]
-
-            if (
-                not pd.isna(commune)
-                and str(commune).strip() not in communes_valides
-            ):
-                ajouter_anomalie(
-                    anomalies,
-                    numero_ligne,
-                    "commune",
-                    "Valeur non reconnue",
-                    str(commune),
-                    "La commune n'est pas dans la liste de référence.",
-                    "Choisir une commune valide.",
-                    "Moyen"
-                )
-
-        if "telephone" in df.columns:
-            telephone = ligne["telephone"]
-
-            if not pd.isna(telephone):
-                telephone = str(telephone).strip()
-
-                if telephone.endswith(".0"):
-                    telephone = telephone[:-2]
-
-                if (
-                    not telephone.isdigit()
-                    or len(telephone) != 8
-                ):
-                    ajouter_anomalie(
-                        anomalies,
-                        numero_ligne,
-                        "telephone",
-                        "Format incorrect",
-                        telephone,
-                        "Le numéro doit contenir 8 chiffres.",
-                        "Vérifier le numéro de téléphone.",
-                        "Élevé"
-                    )
-
-        if "date_inscription" in df.columns:
-            date_valeur = ligne["date_inscription"]
-
-            if not pd.isna(date_valeur):
-                date_convertie = pd.to_datetime(
-                    date_valeur,
-                    errors="coerce"
-                )
-
-                if pd.isna(date_convertie):
-                    ajouter_anomalie(
-                        anomalies,
-                        numero_ligne,
-                        "date_inscription",
-                        "Date invalide",
-                        str(date_valeur),
-                        "La date n'est pas reconnue.",
-                        "Corriger au format AAAA-MM-JJ.",
-                        "Élevé"
-                    )
-
-    if "identifiant" in df.columns:
-        doublons = df.duplicated(
-            subset=["identifiant"],
-            keep=False
-        )
-
-        for index in df.index[doublons]:
-            ajouter_anomalie(
-                anomalies,
-                index + 2,
-                "identifiant",
-                "Identifiant dupliqué",
-                str(df.loc[index, "identifiant"]),
-                "Cet identifiant apparaît plusieurs fois.",
-                "Conserver une seule fiche après vérification.",
-                "Élevé"
-            )
-
-    return pd.DataFrame(anomalies)
-
-
-def analyser_isolation_forest(df):
-    resultat = df.copy()
-    anomalies = []
-
-    colonnes_numeriques = list(
-        resultat.select_dtypes(
-            include="number"
-        ).columns
-    )
-
-    if len(colonnes_numeriques) == 0:
-        return resultat, pd.DataFrame(anomalies), []
-
-    donnees_numeriques = resultat[
-        colonnes_numeriques
-    ].copy()
-
-    donnees_numeriques = donnees_numeriques.replace(
-        [float("inf"), float("-inf")],
-        pd.NA
-    )
-
-    donnees_numeriques = donnees_numeriques.apply(
-        pd.to_numeric,
-        errors="coerce"
-    )
-
-    donnees_numeriques = donnees_numeriques.fillna(
-        donnees_numeriques.median()
-    )
-
-    donnees_numeriques = donnees_numeriques.fillna(0)
-
-    if len(donnees_numeriques) < 5:
-        return resultat, pd.DataFrame(anomalies), colonnes_numeriques
-
-    contamination = min(
-        0.20,
-        max(
-            0.05,
-            1 / len(donnees_numeriques)
-        )
-    )
-
-    modele = IsolationForest(
-        n_estimators=200,
-        contamination=contamination,
-        random_state=42
-    )
-
-    predictions = modele.fit_predict(
-        donnees_numeriques
-    )
-
-    scores = modele.decision_function(
-        donnees_numeriques
-    )
-
-    resultat["Score IA"] = scores.round(4)
-    resultat["Anomalie IA"] = [
-        "Oui"
-        if prediction == -1
-        else "Non"
-        for prediction in predictions
-    ]
-
-    colonnes_fondamentales = [
-        colonne
-        for colonne in colonnes_numeriques
-        if colonne in resultat.columns
-    ]
-
-    for position, prediction in enumerate(predictions):
-        if prediction == -1:
-            index = resultat.index[position]
-            numero_ligne = index + 2
-
-            valeurs = []
-
-            for colonne in colonnes_fondamentales:
-                valeurs.append(
-                    f"{colonne}={resultat.loc[index, colonne]}"
-                )
-
-            ajouter_anomalie(
-                anomalies,
-                numero_ligne,
-                ", ".join(colonnes_fondamentales),
-                "Anomalie statistique IA",
-                "; ".join(valeurs),
-                (
-                    "IsolationForest considère cette ligne comme "
-                    "atypique par rapport aux autres lignes."
-                ),
-                (
-                    "Vérifier les valeurs avec la source officielle "
-                    "avant toute correction."
-                ),
-                "À vérifier"
-            )
-
-    return (
-        resultat,
-        pd.DataFrame(anomalies),
-        colonnes_numeriques
-    )
-
-
-def analyser_complet(df, activer_ia=True):
-    rapport_regles = analyser_regles(df)
-
-    if not activer_ia:
-        return df.copy(), rapport_regles, []
-
-    donnees_ia, rapport_ia, colonnes_numeriques = (
-        analyser_isolation_forest(df)
-    )
-
-    if rapport_regles.empty and rapport_ia.empty:
-        rapport_final = pd.DataFrame()
-
-    elif rapport_regles.empty:
-        rapport_final = rapport_ia
-
-    elif rapport_ia.empty:
-        rapport_final = rapport_regles
-
-    else:
-        rapport_final = pd.concat(
-            [
-                rapport_regles,
-                rapport_ia
-            ],
-            ignore_index=True
-        )
-
-    return (
-        donnees_ia,
-        rapport_final,
-        colonnes_numeriques
-    )
-
-
-def nettoyer_donnees(df):
-    nettoye = df.copy()
-    modifications = []
-
-    for colonne in nettoye.columns:
-        if nettoye[colonne].dtype == "object":
-            anciennes_valeurs = nettoye[colonne].copy()
-
-            nettoye[colonne] = (
-                nettoye[colonne]
-                .astype("string")
-                .str.strip()
-            )
-
-            changements = (
-                anciennes_valeurs.astype("string")
-                != nettoye[colonne]
-            )
-
-            for index in nettoye.index[
-                changements.fillna(False)
-            ]:
-                modifications.append(
-                    {
-                        "Ligne": index + 2,
-                        "Colonne": colonne,
-                        "Ancienne valeur": str(
-                            anciennes_valeurs.loc[index]
-                        ),
-                        "Nouvelle valeur": str(
-                            nettoye.loc[index, colonne]
-                        ),
-                        "Raison": (
-                            "Suppression des espaces inutiles"
-                        )
-                    }
-                )
-
-    if "commune" in nettoye.columns:
-        correspondances = {
-            "djibouti ville": "Djibouti",
-            "djibouti-ville": "Djibouti",
-            "balbala": "Balbala",
-            "boulaos": "Boulaos",
-            "ras dika": "Ras-Dika"
-        }
-
-        for index, valeur in nettoye["commune"].items():
-            if pd.isna(valeur):
+            except UnicodeDecodeError:
                 continue
 
-            ancienne_valeur = str(valeur).strip()
-            nouvelle_valeur = correspondances.get(
-                ancienne_valeur.lower(),
-                ancienne_valeur
-            )
-
-            if ancienne_valeur != nouvelle_valeur:
-                nettoye.loc[index, "commune"] = nouvelle_valeur
-
-                modifications.append(
-                    {
-                        "Ligne": index + 2,
-                        "Colonne": "commune",
-                        "Ancienne valeur": ancienne_valeur,
-                        "Nouvelle valeur": nouvelle_valeur,
-                        "Raison": (
-                            "Harmonisation du nom de la commune"
-                        )
-                    }
-                )
-
-    if "telephone" in nettoye.columns:
-        anciennes_valeurs = nettoye["telephone"].copy()
-
-        nettoye["telephone"] = (
-            nettoye["telephone"]
-            .astype("string")
-            .str.replace(
-                r"\.0$",
-                "",
-                regex=True
-            )
-            .str.replace(
-                r"\s+",
-                "",
-                regex=True
-            )
+        raise ValueError(
+            "Impossible de lire l'encodage du fichier CSV."
         )
 
-        changements = (
-            anciennes_valeurs.astype("string")
-            != nettoye["telephone"]
+    if nom.endswith(".xlsx") or nom.endswith(".xls"):
+        return pd.read_excel(io.BytesIO(contenu))
+
+    if nom.endswith(".json"):
+        return pd.read_json(io.BytesIO(contenu))
+
+    if nom.endswith(".ods"):
+        return pd.read_excel(
+            io.BytesIO(contenu),
+            engine="odf"
         )
 
-        for index in nettoye.index[
-            changements.fillna(False)
-        ]:
-            modifications.append(
-                {
-                    "Ligne": index + 2,
-                    "Colonne": "telephone",
-                    "Ancienne valeur": str(
-                        anciennes_valeurs.loc[index]
-                    ),
-                    "Nouvelle valeur": str(
-                        nettoye.loc[index, "telephone"]
-                    ),
-                    "Raison": (
-                        "Normalisation du téléphone"
-                    )
-                }
-            )
-
-    if "identifiant" in nettoye.columns:
-        indices_doublons = nettoye.index[
-            nettoye.duplicated(
-                subset=["identifiant"],
-                keep="first"
-            )
-        ]
-
-        for index in indices_doublons:
-            modifications.append(
-                {
-                    "Ligne": index + 2,
-                    "Colonne": "identifiant",
-                    "Ancienne valeur": str(
-                        nettoye.loc[index, "identifiant"]
-                    ),
-                    "Nouvelle valeur": "Ligne supprimée",
-                    "Raison": (
-                        "Suppression contrôlée d'un doublon"
-                    )
-                }
-            )
-
-        nettoye = nettoye.drop_duplicates(
-            subset=["identifiant"],
-            keep="first"
-        )
-
-    journal = pd.DataFrame(modifications)
-
-    return nettoye, journal
-
-
-def afficher_analyse(df):
-    activer_ia = st.checkbox(
-        "🤖 Activer la détection intelligente IsolationForest",
-        value=True
+    raise ValueError(
+        "Format non pris en charge."
     )
 
-    donnees_analysees, rapport, colonnes_ia = (
-        analyser_complet(
-            df,
-            activer_ia=activer_ia
-        )
-    )
 
-    total_anomalies = len(rapport)
+# ============================================================
+# NETTOYAGE DES NOMS DE COLONNES
+# ============================================================
+
+def normaliser_nom_colonne(nom):
+    nom = str(nom).strip().lower()
+    nom = re.sub(r"\s+", "_", nom)
+    nom = re.sub(r"[^a-z0-9_àâçéèêëîïôùûüÿ-]", "", nom)
+    return nom
+
+
+def normaliser_colonnes(df):
+    resultat = df.copy()
+    resultat.columns = [
+        normaliser_nom_colonne(colonne)
+        for colonne in resultat.columns
+    ]
+    return resultat
+
+
+# ============================================================
+# ANALYSE DES DONNÉES
+# ============================================================
+
+def analyser_donnees(df):
     total_lignes = len(df)
+    total_colonnes = len(df.columns)
 
-    if total_anomalies == 0:
-        lignes_concernees = 0
+    valeurs_manquantes = int(df.isna().sum().sum())
+    lignes_dupliquees = int(df.duplicated().sum())
+
+    cellules_totales = total_lignes * total_colonnes
+
+    if cellules_totales > 0:
+        taux_completude = (
+            (cellules_totales - valeurs_manquantes)
+            / cellules_totales
+        ) * 100
     else:
-        lignes_concernees = rapport[
-            rapport["Ligne"] > 0
-        ]["Ligne"].nunique()
+        taux_completude = 0
 
-    if total_lignes > 0:
-        score = max(
-            0,
-            round(
-                100 * (
-                    1 - lignes_concernees / total_lignes
-                )
-            )
-        )
-    else:
-        score = 0
-
-    st.markdown(
-        '<h2 class="section-title">📊 Tableau de bord</h2>',
-        unsafe_allow_html=True
+    resume_colonnes = pd.DataFrame(
+        {
+            "colonne": df.columns,
+            "type": [
+                str(df[colonne].dtype)
+                for colonne in df.columns
+            ],
+            "valeurs_manquantes": [
+                int(df[colonne].isna().sum())
+                for colonne in df.columns
+            ],
+            "valeurs_uniques": [
+                int(df[colonne].nunique(dropna=True))
+                for colonne in df.columns
+            ]
+        }
     )
 
-    st.dataframe(
-        donnees_analysees,
-        use_container_width=True
-    )
+    return {
+        "total_lignes": total_lignes,
+        "total_colonnes": total_colonnes,
+        "valeurs_manquantes": valeurs_manquantes,
+        "lignes_dupliquees": lignes_dupliquees,
+        "taux_completude": taux_completude,
+        "resume_colonnes": resume_colonnes
+    }
 
-    col1, col2, col3, col4 = st.columns(4)
 
-    with col1:
-        st.metric(
-            "Lignes",
-            df.shape[0]
-        )
+# ============================================================
+# EMPREINTE DU FICHIER
+# ============================================================
 
-    with col2:
-        st.metric(
-            "Colonnes",
-            df.shape[1]
-        )
+def calculer_empreinte(fichier):
+    contenu = fichier.getvalue()
+    return hashlib.sha256(contenu).hexdigest()[:16]
 
-    with col3:
-        st.metric(
-            "Anomalies",
-            total_anomalies
-        )
 
-    with col4:
-        st.metric(
-            "Score de qualité",
-            f"{score} %"
-        )
-
-    if activer_ia:
-        if colonnes_ia:
-            st.info(
-                "Colonnes analysées par IA : "
-                + ", ".join(colonnes_ia)
-            )
-        else:
-            st.warning(
-                "Aucune colonne numérique disponible "
-                "pour l'analyse IA."
-            )
-
-    if total_anomalies == 0:
-        st.success(
-            "Aucune anomalie détectée."
-        )
-
-    else:
-        st.markdown(
-            '<h3 class="section-title">🚨 Rapport des anomalies</h3>',
-            unsafe_allow_html=True
-        )
-
-        st.dataframe(
-            rapport,
-            use_container_width=True
-        )
-
-        resume = (
-            rapport["Type"]
-            .value_counts()
-            .rename_axis("Type d'anomalie")
-            .reset_index(name="Nombre")
-        )
-
-        st.subheader("📌 Résumé")
-
-        st.dataframe(
-            resume,
-            use_container_width=True
-        )
-
-        csv_rapport = rapport.to_csv(
-            index=False
-        ).encode("utf-8-sig")
-
-        st.download_button(
-            "⬇️ Télécharger le rapport",
-            data=csv_rapport,
-            file_name="rapport_anomalies.csv",
-            mime="text/csv",
-            key="telecharger_rapport"
-        )
-
-    st.markdown(
-        '<h3 class="section-title">🛠️ Nettoyage contrôlé</h3>',
-        unsafe_allow_html=True
-    )
-
-    st.write(
-        "Le fichier original reste inchangé. "
-        "Une copie nettoyée sera générée."
-    )
-
-    if st.button(
-        "✨ Générer une version nettoyée",
-        key="bouton_nettoyage"
-    ):
-        donnees_nettoyees, journal = nettoyer_donnees(
-            df
-        )
-
-        st.session_state["donnees_nettoyees"] = (
-            donnees_nettoyees
-        )
-
-        st.session_state["journal_modifications"] = (
-            journal
-        )
-
-    if "donnees_nettoyees" in st.session_state:
-        donnees_nettoyees = st.session_state[
-            "donnees_nettoyees"
-        ]
-
-        journal = st.session_state[
-            "journal_modifications"
-        ]
-
-        st.success(
-            "Une version nettoyée a été générée."
-        )
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.metric(
-                "Lignes avant",
-                len(df)
-            )
-
-        with col2:
-            st.metric(
-                "Lignes après",
-                len(donnees_nettoyees)
-            )
-
-        st.dataframe(
-            donnees_nettoyees,
-            use_container_width=True
-        )
-
-        if journal.empty:
-            st.info(
-                "Aucune modification automatique effectuée."
-            )
-
-        else:
-            st.subheader("📝 Journal des modifications")
-
-            st.dataframe(
-                journal,
-                use_container_width=True
-            )
-
-            csv_journal = journal.to_csv(
-                index=False
-            ).encode("utf-8-sig")
-
-            st.download_button(
-                "⬇️ Télécharger le journal",
-                data=csv_journal,
-                file_name="journal_modifications.csv",
-                mime="text/csv",
-                key="telecharger_journal"
-            )
-
-        csv_nettoye = donnees_nettoyees.to_csv(
-            index=False
-        ).encode("utf-8-sig")
-
-        st.download_button(
-            "⬇️ Télécharger le fichier nettoyé",
-            data=csv_nettoye,
-            file_name="donnees_nettoyees.csv",
-            mime="text/csv",
-            key="telecharger_nettoye"
-        )
-
-    st.markdown(
-        '<h3 class="section-title">📈 Répartition des statuts</h3>',
-        unsafe_allow_html=True
-    )
-
-    if "statut" in df.columns:
-        compte = (
-            df["statut"]
-            .fillna("Manquant")
-            .value_counts()
-        )
-
-        st.bar_chart(compte)
-
-    else:
-        st.info(
-            "Aucune colonne statut trouvée."
-        )
-
-    empreinte = hashlib.sha256(
-        pd.util.hash_pandas_object(
-            df,
-            index=True
-        ).values
-    ).hexdigest()[:16]
-
-    st.caption(
-        f"Traçabilité : empreinte du fichier analysé = {empreinte}"
-    )
-
+# ============================================================
+# PAGE ACCUEIL
+# ============================================================
 
 def afficher_accueil():
     st.markdown(
         """
         <div class="hero">
-            <h1>🇩🇯 DataClean Djibouti</h1>
+            <h1>🌍 DataClean Djibouti</h1>
             <p>
-                Une solution intelligente pour améliorer la qualité,
-                la fiabilité et la gouvernance des données publiques.
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
-    st.markdown(
-        """
-        <div class="card">
-            <h2>Des données fiables pour de meilleures décisions</h2>
-            <p>
-                DataClean Djibouti aide les administrations et institutions
-                à identifier les erreurs présentes dans leurs fichiers.
-            </p>
-            <p>
-                La solution combine des règles de contrôle et un modèle
-                IsolationForest pour détecter les lignes atypiques.
+                Prototype de gouvernance, de qualité et de
+                traçabilité des données.
             </p>
         </div>
         """,
@@ -1009,9 +428,10 @@ def afficher_accueil():
         st.markdown(
             """
             <div class="card">
-                <h3>🎯 Objectif</h3>
+                <h3>📊 Qualité des données</h3>
                 <p>
-                    Améliorer la qualité des données publiques.
+                    Détecter les valeurs manquantes, les doublons
+                    et les incohérences dans les fichiers.
                 </p>
             </div>
             """,
@@ -1022,9 +442,10 @@ def afficher_accueil():
         st.markdown(
             """
             <div class="card">
-                <h3>🤖 Intelligence</h3>
+                <h3>🔐 Traçabilité</h3>
                 <p>
-                    Repérer les comportements numériques atypiques.
+                    Générer une empreinte permettant d'identifier
+                    le fichier analysé.
                 </p>
             </div>
             """,
@@ -1035,15 +456,34 @@ def afficher_accueil():
         st.markdown(
             """
             <div class="card">
-                <h3>📊 Résultat</h3>
+                <h3>🇩🇯 Contexte djiboutien</h3>
                 <p>
-                    Produire un rapport clair et téléchargeable.
+                    Proposer une solution simple pour améliorer
+                    la gestion des données publiques.
                 </p>
             </div>
             """,
             unsafe_allow_html=True
         )
 
+    st.markdown(
+        """
+        <div class="card">
+            <h3>Comment utiliser l'application ?</h3>
+            <p>
+                Sélectionnez « Analyser un fichier » dans le menu
+                à gauche, puis importez un fichier CSV, Excel,
+                JSON ou ODS.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+# ============================================================
+# PAGE OBJECTIFS
+# ============================================================
 
 def afficher_objectifs():
     st.markdown(
@@ -1052,50 +492,20 @@ def afficher_objectifs():
     )
 
     objectifs = [
-        (
-            "Fiabiliser les données",
-            "Identifier les erreurs avant l'utilisation des fichiers."
-        ),
-        (
-            "Automatiser les contrôles",
-            "Réduire le temps consacré aux vérifications manuelles."
-        ),
-        (
-            "Détecter les anomalies",
-            "Combiner règles métier et détection statistique."
-        ),
-        (
-            "Améliorer la décision",
-            "Fournir des données plus propres aux analystes."
-        ),
-        (
-            "Renforcer la traçabilité",
-            "Conserver un rapport et un journal des modifications."
-        ),
-        (
-            "Respecter la confidentialité",
-            "Utiliser des données publiques ou anonymisées."
-        )
+        "Améliorer la qualité des données.",
+        "Faciliter la détection des erreurs.",
+        "Identifier les doublons et les valeurs manquantes.",
+        "Renforcer la traçabilité des fichiers.",
+        "Sensibiliser à la gouvernance des données."
     ]
 
-    for debut in range(0, len(objectifs), 3):
-        colonnes = st.columns(3)
+    for objectif in objectifs:
+        st.success(objectif)
 
-        for position, colonne in enumerate(colonnes):
-            if debut + position < len(objectifs):
-                titre, texte = objectifs[debut + position]
 
-                with colonne:
-                    st.markdown(
-                        f"""
-                        <div class="card">
-                            <h3>{titre}</h3>
-                            <p>{texte}</p>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
-
+# ============================================================
+# PAGE FONCTIONNALITÉS
+# ============================================================
 
 def afficher_fonctionnalites():
     st.markdown(
@@ -1104,99 +514,60 @@ def afficher_fonctionnalites():
     )
 
     fonctionnalites = [
-        (
-            "📂 Importation",
-            "CSV, Excel, JSON et ODS."
-        ),
-        (
-            "🔎 Contrôle des règles",
-            "Valeurs manquantes, doublons et formats invalides."
-        ),
-        (
-            "🤖 IsolationForest",
-            "Détection des lignes numériques atypiques."
-        ),
-        (
-            "📊 Score de qualité",
-            "Indicateur synthétique de l'état du fichier."
-        ),
-        (
-            "🛠️ Nettoyage",
-            "Génération d'une copie nettoyée."
-        ),
-        (
-            "📝 Journal",
-            "Historique des modifications proposées."
-        ),
-        (
-            "⬇️ Rapports",
-            "Téléchargement des résultats en CSV."
-        ),
-        (
-            "🔐 Traçabilité",
-            "Empreinte technique du fichier analysé."
-        ),
-        (
-            "✅ Validation humaine",
-            "Les corrections doivent être vérifiées."
-        )
+        ("Importation", "CSV, Excel, JSON et ODS."),
+        ("Profilage", "Analyse des colonnes et des types."),
+        ("Qualité", "Détection des valeurs manquantes."),
+        ("Doublons", "Identification des lignes répétées."),
+        ("Statuts", "Répartition des valeurs de statut."),
+        ("Traçabilité", "Calcul d'une empreinte du fichier."),
+        ("Export", "Téléchargement des résultats nettoyés.")
     ]
 
-    for debut in range(0, len(fonctionnalites), 3):
-        colonnes = st.columns(3)
-
-        for position, colonne in enumerate(colonnes):
-            if debut + position < len(fonctionnalites):
-                titre, texte = fonctionnalites[debut + position]
-
-                with colonne:
-                    st.markdown(
-                        f"""
-                        <div class="card">
-                            <h3>{titre}</h3>
-                            <p>{texte}</p>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
+    for titre, description in fonctionnalites:
+        st.markdown(
+            f"""
+            <div class="card">
+                <h3>{titre}</h3>
+                <p>{description}</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
 
-def afficher_cible():
+# ============================================================
+# PAGE PUBLIC CIBLE
+# ============================================================
+
+def afficher_public_cible():
     st.markdown(
         '<h1 class="section-title">👥 Public cible</h1>',
         unsafe_allow_html=True
     )
 
-    st.write(
-        "DataClean Djibouti s'adresse aux organisations qui produisent, "
-        "gèrent ou utilisent des données."
-    )
-
-    cibles = [
-        "Administrations publiques",
-        "Établissements publics",
-        "Collectivités locales",
-        "Services de suivi-évaluation",
-        "Analystes de données",
-        "Chercheurs",
-        "ONG",
-        "Startups numériques"
-    ]
-
-    for cible in cibles:
-        st.markdown(
-            f'<span class="badge">{cible}</span>',
-            unsafe_allow_html=True
-        )
-
     st.markdown(
         """
         <div class="card">
-            <h3>Exemple d'utilisation</h3>
+            <h3>Administrations publiques</h3>
             <p>
-                Un agent charge un fichier administratif, observe les erreurs
-                détectées par les règles et par IsolationForest, vérifie les
-                résultats, puis télécharge le rapport.
+                Pour améliorer la qualité des registres et des
+                fichiers administratifs.
+            </p>
+        </div>
+
+        <div class="card">
+            <h3>Organisations et entreprises</h3>
+            <p>
+                Pour contrôler les fichiers avant leur utilisation
+                dans un rapport ou une application.
+            </p>
+        </div>
+
+        <div class="card">
+            <h3>Étudiants et chercheurs</h3>
+            <p>
+                Pour comprendre les problèmes de qualité des données
+                et les corriger.
             </p>
         </div>
         """,
@@ -1204,117 +575,378 @@ def afficher_cible():
     )
 
 
-def afficher_methode():
+# ============================================================
+# PAGE COMMENT ÇA MARCHE
+# ============================================================
+
+def afficher_comment_ca_marche():
     st.markdown(
-        '<h1 class="section-title">🔄 Comment ça marche ?</h1>',
+        '<h1 class="section-title">❓ Comment ça marche ?</h1>',
         unsafe_allow_html=True
     )
 
     etapes = [
-        (
-            "1",
-            "Importer",
-            "Charger un fichier synthétique, public ou anonymisé."
-        ),
-        (
-            "2",
-            "Contrôler",
-            "Appliquer les règles de qualité."
-        ),
-        (
-            "3",
-            "Apprendre",
-            "IsolationForest observe les colonnes numériques."
-        ),
-        (
-            "4",
-            "Détecter",
-            "Identifier les lignes statistiquement atypiques."
-        ),
-        (
-            "5",
-            "Expliquer",
-            "Présenter le type et la cause du problème."
-        ),
-        (
-            "6",
-            "Exporter",
-            "Télécharger le rapport et la copie nettoyée."
-        )
+        "L'utilisateur importe un fichier.",
+        "L'application lit les données.",
+        "Les colonnes sont examinées.",
+        "Les valeurs manquantes sont comptées.",
+        "Les doublons sont identifiés.",
+        "Les résultats sont affichés sous forme de tableaux et graphiques.",
+        "L'utilisateur peut télécharger le fichier nettoyé."
     ]
 
-    for debut in range(0, len(etapes), 3):
-        colonnes = st.columns(3)
-
-        for position, colonne in enumerate(colonnes):
-            if debut + position < len(etapes):
-                numero, titre, texte = etapes[debut + position]
-
-                with colonne:
-                    st.markdown(
-                        f"""
-                        <div class="card">
-                            <h3>{numero}. {titre}</h3>
-                            <p>{texte}</p>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
+    for numero, etape in enumerate(etapes, start=1):
+        st.markdown(
+            f"""
+            <div class="card">
+                <h3>Étape {numero}</h3>
+                <p>{etape}</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
 
-def afficher_donnees():
+# ============================================================
+# PAGE ANALYSEUR
+# ============================================================
+
+def afficher_analyseur():
     st.markdown(
-        '<h1 class="section-title">🔐 Données et confidentialité</h1>',
+        '<h1 class="section-title">📊 Analyseur intelligent</h1>',
         unsafe_allow_html=True
     )
 
-    st.warning(
-        "N'importez pas de données personnelles réelles."
+    st.info(
+        "Les fichiers doivent être publics, synthétiques "
+        "ou anonymisés. Évitez les données personnelles sensibles."
+    )
+
+    fichier = st.file_uploader(
+        "Choisissez un fichier à analyser",
+        type=["csv", "xlsx", "xls", "json", "ods"],
+        help=(
+            "Formats acceptés : CSV, Excel, JSON et ODS."
+        )
+    )
+
+    utiliser_demo = st.checkbox(
+        "Utiliser les données de démonstration",
+        value=False
+    )
+
+    if fichier is None and not utiliser_demo:
+        st.markdown(
+            """
+            <div class="card">
+                <h3>📁 Aucun fichier sélectionné</h3>
+                <p>
+                    Importez un fichier ou activez les données
+                    de démonstration pour voir le fonctionnement
+                    de l'analyseur.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        return
+
+    try:
+        if fichier is not None:
+            df_original = lire_fichier(fichier)
+            nom_fichier = fichier.name
+            empreinte = calculer_empreinte(fichier)
+            source_demo = False
+        else:
+            df_original = creer_donnees_demo()
+            nom_fichier = "donnees_demo.csv"
+            contenu_demo = df_original.to_csv(
+                index=False
+            ).encode("utf-8")
+            empreinte = hashlib.sha256(
+                contenu_demo
+            ).hexdigest()[:16]
+            source_demo = True
+
+        df = normaliser_colonnes(df_original)
+        analyse = analyser_donnees(df)
+
+    except Exception as erreur:
+        st.error(
+            f"Erreur lors de la lecture du fichier : {erreur}"
+        )
+        return
+
+    if source_demo:
+        st.warning(
+            "Vous utilisez des données synthétiques de démonstration. "
+            "Les résultats ne représentent pas des statistiques officielles."
+        )
+    else:
+        st.success(
+            f"Fichier chargé avec succès : {nom_fichier}"
+        )
+
+    st.markdown(
+        '<h2 class="section-title">📌 Résumé général</h2>',
+        unsafe_allow_html=True
+    )
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.metric(
+            "Nombre de lignes",
+            analyse["total_lignes"]
+        )
+
+    with col2:
+        st.metric(
+            "Nombre de colonnes",
+            analyse["total_colonnes"]
+        )
+
+    with col3:
+        st.metric(
+            "Valeurs manquantes",
+            analyse["valeurs_manquantes"]
+        )
+
+    with col4:
+        st.metric(
+            "Doublons",
+            analyse["lignes_dupliquees"]
+        )
+
+    st.markdown(
+        '<h2 class="section-title">📋 Aperçu des données</h2>',
+        unsafe_allow_html=True
+    )
+
+    st.dataframe(
+        df.head(100),
+        use_container_width=True
+    )
+
+    st.markdown(
+        '<h2 class="section-title">🔍 Profil des colonnes</h2>',
+        unsafe_allow_html=True
+    )
+
+    st.dataframe(
+        analyse["resume_colonnes"],
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.markdown(
+        '<h2 class="section-title">📈 Répartition des statuts dans le fichier</h2>',
+        unsafe_allow_html=True
+    )
+
+    colonnes_statut = [
+        colonne
+        for colonne in df.columns
+        if colonne in [
+            "statut",
+            "status",
+            "etat",
+            "état"
+        ]
+    ]
+
+    if colonnes_statut:
+        colonne_statut = colonnes_statut[0]
+
+        compte_statuts = (
+            df[colonne_statut]
+            .fillna("Manquant")
+            .astype(str)
+            .value_counts()
+        )
+
+        st.bar_chart(
+            compte_statuts,
+            color="#006bb6"
+        )
+
+        if source_demo:
+            st.caption(
+                "Dans cet exemple synthétique, 8 lignes sont "
+                "marquées « Actif » et 2 lignes « Inactif ». "
+                "Avec un fichier réel, les chiffres dépendront "
+                "de son contenu."
+            )
+        else:
+            st.caption(
+                "Ce graphique présente les valeurs de la colonne "
+                "« statut » contenues dans le fichier analysé."
+            )
+
+    else:
+        st.info(
+            "Aucune colonne de statut n'a été trouvée dans ce fichier."
+        )
+
+    st.markdown(
+        '<h2 class="section-title">⚠️ Contrôles de qualité</h2>',
+        unsafe_allow_html=True
+    )
+
+    if analyse["valeurs_manquantes"] == 0:
+        st.success(
+            "Aucune valeur manquante détectée."
+        )
+    else:
+        st.warning(
+            f"{analyse['valeurs_manquantes']} valeur(s) "
+            "manquante(s) détectée(s)."
+        )
+
+    if analyse["lignes_dupliquees"] == 0:
+        st.success(
+            "Aucune ligne dupliquée détectée."
+        )
+    else:
+        st.warning(
+            f"{analyse['lignes_dupliquees']} ligne(s) "
+            "dupliquée(s) détectée(s)."
+        )
+
+    st.write(
+        f"Taux de complétude : "
+        f"{analyse['taux_completude']:.2f} %"
+    )
+
+    st.markdown(
+        '<h2 class="section-title">🧹 Nettoyage</h2>',
+        unsafe_allow_html=True
+    )
+
+    df_nettoye = df.copy()
+
+    for colonne in df_nettoye.select_dtypes(
+        include=["object"]
+    ).columns:
+        df_nettoye[colonne] = (
+            df_nettoye[colonne]
+            .astype("string")
+            .str.strip()
+        )
+
+    df_nettoye = df_nettoye.drop_duplicates()
+
+    st.write(
+        f"Après nettoyage, le fichier contient "
+        f"{len(df_nettoye)} ligne(s)."
+    )
+
+    st.markdown(
+        '<h2 class="section-title">⬇️ Téléchargements</h2>',
+        unsafe_allow_html=True
+    )
+
+    fichier_nettoye = df_nettoye.to_csv(
+        index=False,
+        encoding="utf-8-sig"
+    )
+
+    rapport = {
+        "nom_fichier": nom_fichier,
+        "date_analyse": datetime.now().isoformat(
+            timespec="seconds"
+        ),
+        "nombre_lignes": analyse["total_lignes"],
+        "nombre_colonnes": analyse["total_colonnes"],
+        "valeurs_manquantes": analyse["valeurs_manquantes"],
+        "doublons": analyse["lignes_dupliquees"],
+        "taux_completude": round(
+            analyse["taux_completude"],
+            2
+        ),
+        "empreinte": empreinte,
+        "donnees_synthetiques": source_demo
+    }
+
+    rapport_json = json.dumps(
+        rapport,
+        ensure_ascii=False,
+        indent=4
     )
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown(
-            """
-            <div class="card">
-                <h3>Données recommandées</h3>
-                <p>
-                    Données synthétiques, publiques ou anonymisées.
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True
+        st.download_button(
+            label="⬇️ Télécharger le fichier nettoyé",
+            data=fichier_nettoye,
+            file_name="fichier_nettoye.csv",
+            mime="text/csv",
+            use_container_width=True
         )
 
     with col2:
-        st.markdown(
-            """
-            <div class="card">
-                <h3>Validation humaine</h3>
-                <p>
-                    Une anomalie détectée par l'IA n'est pas forcément
-                    une erreur. Elle doit être vérifiée par un agent.
-                </p>
-            </div>
-            """,
-            unsafe_allow_html=True
+        st.download_button(
+            label="⬇️ Télécharger le rapport",
+            data=rapport_json,
+            file_name="rapport_analyse.json",
+            mime="application/json",
+            use_container_width=True
         )
+
+    st.markdown(
+        f"""
+        <div style="
+            background-color: #e8f1f8;
+            color: #26364d;
+            padding: 14px 18px;
+            border-radius: 8px;
+            border-left: 5px solid #006bb6;
+            margin-top: 20px;
+        ">
+            <strong>Traçabilité :</strong>
+            empreinte du fichier analysé :
+            <code style="color: #005a9c;">
+                {empreinte}
+            </code>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+
+# ============================================================
+# PAGE DONNÉES ET CONFIDENTIALITÉ
+# ============================================================
+
+def afficher_confidentialite():
+    st.markdown(
+        '<h1 class="section-title">🔐 Données et confidentialité</h1>',
+        unsafe_allow_html=True
+    )
 
     st.markdown(
         """
         <div class="card">
-            <h3>Limites d'IsolationForest</h3>
+            <h3>Bonnes pratiques</h3>
             <p>
-                Le modèle détecte des comportements atypiques dans les
-                colonnes numériques. Il ne connaît pas automatiquement
-                la vérité administrative et peut produire des faux positifs.
+                Utilisez uniquement des données publiques, synthétiques
+                ou anonymisées.
+            </p>
+            <p>
+                Ne téléversez pas de mots de passe, de numéros de
+                téléphone, de documents d'identité ou de données
+                médicales.
             </p>
         </div>
         """,
         unsafe_allow_html=True
     )
 
+
+# ============================================================
+# PAGE À PROPOS
+# ============================================================
 
 def afficher_a_propos():
     st.markdown(
@@ -1325,41 +957,43 @@ def afficher_a_propos():
     st.markdown(
         """
         <div class="card">
-            <h2>DataClean Djibouti</h2>
+            <h3>DataClean Djibouti</h3>
             <p>
-                DataClean Djibouti est un prototype d'aide à la qualité
-                et à la gouvernance des données publiques.
+                DataClean Djibouti est un prototype destiné à montrer
+                comment une application simple peut aider à analyser
+                la qualité et la traçabilité des données.
             </p>
             <p>
-                Il combine des règles métier explicables et une méthode
-                d'apprentissage automatique non supervisé.
+                Le prototype peut évoluer vers une solution adaptée
+                aux besoins des administrations et organisations.
             </p>
         </div>
         """,
         unsafe_allow_html=True
     )
 
-    col1, col2, col3 = st.columns(3)
 
-    with col1:
-        st.metric("Version", "Prototype 2.0")
-
-    with col2:
-        st.metric("Pays cible", "Djibouti")
-
-    with col3:
-        st.metric("Modèle IA", "IsolationForest")
-
+# ============================================================
+# PAGE CONTACT
+# ============================================================
 
 def afficher_contact():
     st.markdown(
-        '<h1 class="section-title">📩 Contact</h1>',
+        '<h1 class="section-title">📞 Contact</h1>',
         unsafe_allow_html=True
     )
 
-    st.write(
-        "Cette page permet de demander une présentation "
-        "ou une démonstration du projet."
+    st.markdown(
+        """
+        <div class="card">
+            <h3>Nous contacter</h3>
+            <p>
+                Pour toute question ou suggestion concernant le
+                prototype, contactez l'équipe du projet.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True
     )
 
     with st.form("formulaire_contact"):
@@ -1378,9 +1012,14 @@ def afficher_contact():
                 )
             else:
                 st.success(
-                    "Message enregistré pour la démonstration."
+                    "Votre message a été enregistré "
+                    "pour la démonstration."
                 )
 
+
+# ============================================================
+# PAGE PLAN DU SITE
+# ============================================================
 
 def afficher_plan_du_site():
     st.markdown(
@@ -1388,7 +1027,7 @@ def afficher_plan_du_site():
         unsafe_allow_html=True
     )
 
-    sections = [
+    pages = [
         "Accueil",
         "Objectifs",
         "Fonctionnalités",
@@ -1401,104 +1040,22 @@ def afficher_plan_du_site():
         "Plan du site"
     ]
 
-    for section in sections:
-        st.markdown(
-            f"- **{section}**"
-        )
+    for page in pages:
+        st.write(f"• {page}")
 
 
-def afficher_analyseur():
-    st.markdown(
-        """
-        <div class="hero">
-            <h1>📊 Analyseur intelligent</h1>
-            <p>
-                Détection des erreurs par règles et IsolationForest.
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+# ============================================================
+# MENU LATÉRAL
+# ============================================================
 
-    fichier_demo = creer_donnees_demo().to_csv(
-        index=False
-    ).encode("utf-8-sig")
-
-    st.download_button(
-        "📥 Télécharger un fichier exemple",
-        data=fichier_demo,
-        file_name="exemple_dataclean_djibouti.csv",
-        mime="text/csv",
-        key="telecharger_exemple"
-    )
-
-    st.markdown("---")
-
-    fichier = st.file_uploader(
-        "📂 Choisissez un fichier CSV, Excel, JSON ou ODS",
-        type=[
-            "csv",
-            "xlsx",
-            "json",
-            "ods"
-        ],
-        key="chargeur_fichier"
-    )
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        charger_demo = st.button(
-            "🧪 Charger les données de démonstration"
-        )
-
-    with col2:
-        reinitialiser = st.button(
-            "🗑️ Réinitialiser"
-        )
-
-    if reinitialiser:
-        cles = [
-            "donnees",
-            "donnees_nettoyees",
-            "journal_modifications"
-        ]
-
-        for cle in cles:
-            if cle in st.session_state:
-                del st.session_state[cle]
-
-        st.rerun()
-
-    if charger_demo:
-        st.session_state["donnees"] = creer_donnees_demo()
-
-    if fichier is not None:
-        try:
-            st.session_state["donnees"] = lire_fichier(
-                fichier
-            )
-
-        except Exception as erreur:
-            st.error(
-                f"Impossible de lire le fichier : {erreur}"
-            )
-
-    if "donnees" in st.session_state:
-        afficher_analyse(
-            st.session_state["donnees"]
-        )
-
-    else:
-        st.info(
-            "Importez un fichier ou chargez les données de démonstration."
-        )
-
-
-st.sidebar.title("🌍 DataClean Djibouti")
-st.sidebar.caption(
-    "Prototype de gouvernance des données"
+st.sidebar.markdown(
+    """
+    <h1>🌍 DataClean Djibouti</h1>
+    <p>Prototype de gouvernance des données</p>
+    """,
+    unsafe_allow_html=True
 )
+
 st.sidebar.markdown("---")
 
 page = st.sidebar.radio(
@@ -1518,11 +1075,16 @@ page = st.sidebar.radio(
 )
 
 st.sidebar.markdown("---")
+
 st.sidebar.info(
     "Utilisez uniquement des données publiques, "
     "synthétiques ou anonymisées."
 )
 
+
+# ============================================================
+# AFFICHAGE DE LA PAGE SÉLECTIONNÉE
+# ============================================================
 
 if page == "Accueil":
     afficher_accueil()
@@ -1534,16 +1096,16 @@ elif page == "Fonctionnalités":
     afficher_fonctionnalites()
 
 elif page == "Public cible":
-    afficher_cible()
+    afficher_public_cible()
 
 elif page == "Comment ça marche":
-    afficher_methode()
+    afficher_comment_ca_marche()
 
 elif page == "Analyser un fichier":
     afficher_analyseur()
 
 elif page == "Données et confidentialité":
-    afficher_donnees()
+    afficher_confidentialite()
 
 elif page == "À propos":
     afficher_a_propos()
@@ -1555,21 +1117,21 @@ elif page == "Plan du site":
     afficher_plan_du_site()
 
 
+# ============================================================
+# PIED DE PAGE
+# ============================================================
+
 st.markdown(
-    f"""
+    """
     <div class="footer">
-        <h3>🇩🇯 DataClean Djibouti</h3>
+        <h3>DataClean Djibouti</h3>
         <p>
-            Qualité des données publiques • Innovation •
-            Transformation numérique
+            Prototype de qualité, gouvernance et traçabilité
+            des données.
         </p>
         <p>
-            Prototype utilisant des données publiques,
-            synthétiques ou anonymisées.
-        </p>
-        <p>
-            Mise à jour :
-            {datetime.now().strftime("%d/%m/%Y")}
+            Projet académique — Données publiques, synthétiques
+            ou anonymisées uniquement.
         </p>
     </div>
     """,
